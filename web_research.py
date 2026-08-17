@@ -68,6 +68,146 @@ def _title_key(title: str) -> str:
     return re.sub(r"\W+", "", str(title or "").lower())[:220]
 
 
+def _compact_title(title: str, limit: int = 220) -> str:
+    """
+    防止搜索引擎把整页正文误塞进 title。
+    """
+    title = _strip(title)
+    if len(title) <= limit:
+        return title
+
+    # 优先在常见分隔符处截断
+    head = re.split(r"(?:\s+[|–—]\s+|\s+Abstract[:：]\s+|\s+Authors?[:：]\s+)", title, maxsplit=1)[0]
+    head = head.strip()
+
+    if 20 <= len(head) <= limit:
+        return head
+
+    return title[:limit].rstrip(" ,;:-—–") + "…"
+
+
+MATERIAL_ANCHORS = [
+    r"\bKDP\b",
+    r"\bDKDP\b",
+    r"\bKH2PO4\b",
+    r"\bKD2PO4\b",
+    r"potassium\s+dihydrogen\s+phosphate",
+    r"potassium\s+dideuterium\s+phosphate",
+    r"deuterated\s+potassium\s+dihydrogen\s+phosphate",
+]
+
+
+def _has_material_anchor(text: str) -> bool:
+    text = _strip(text)
+    return any(re.search(p, text, flags=re.I) for p in MATERIAL_ANCHORS)
+
+
+def _topic_terms(question: str) -> List[str]:
+    """
+    从本次问题里提取少量主题词，用于外部结果二次排序。
+    """
+    terms = []
+    q = str(question or "")
+    for trigger, expansion in QUERY_HINTS.items():
+        if trigger.lower() in q.lower():
+            for w in re.findall(r"[A-Za-z][A-Za-z0-9+\-]{2,}", expansion.lower()):
+                if w not in {
+                    "kdp", "dkdp", "crystal", "potassium", "dihydrogen",
+                    "phosphate", "defect", "growth"
+                }:
+                    terms.append(w)
+    return list(dict.fromkeys(terms))[:18]
+
+
+def _quality_score(item: Dict, question: str) -> float:
+    text = " ".join([
+        str(item.get("title") or ""),
+        str(item.get("journal") or ""),
+        str(item.get("snippet") or ""),
+    ]).lower()
+
+    score = 0.0
+
+    # KDP/DKDP材料锚点是硬要求，同时也作为最主要的加分项。
+    if _has_material_anchor(text):
+        score += 10.0
+
+    title = str(item.get("title") or "")
+    if _has_material_anchor(title):
+        score += 4.0
+
+    source_type = str(item.get("source_type") or "")
+    if source_type in {"学术元数据", "学术检索"}:
+        score += 2.0
+
+    if item.get("has_abstract"):
+        score += 2.0
+
+    if item.get("doi"):
+        score += 1.0
+
+    topic_hits = 0
+    for term in _topic_terms(question):
+        if term.lower() in text:
+            topic_hits += 1
+    score += min(topic_hits, 6) * 0.7
+
+    # 搜索引擎把正文当标题时通常异常冗长，强烈降权。
+    if len(title) > 300:
+        score -= 8.0
+
+    return score
+
+
+def _filter_and_rank(items: List[Dict], question: str, limit: int = 8) -> List[Dict]:
+    """
+    外部检索质量闸门：
+    1. 必须明确涉及KDP/DKDP/KH2PO4/KD2PO4；
+    2. 拒绝“标题被整页正文污染”的结果；
+    3. 学术来源、摘要、DOI和主题命中优先；
+    4. 最终只保留少量高相关来源。
+    """
+    clean = []
+
+    for raw in items:
+        item = dict(raw)
+
+        original_title = _strip(item.get("title") or "")
+        snippet = _strip(item.get("snippet") or "")
+
+        combined = " ".join([
+            original_title,
+            str(item.get("journal") or ""),
+            snippet,
+        ])
+
+        if not _has_material_anchor(combined):
+            continue
+
+        # 极长网页标题通常是搜索引擎把正文/目录一起抓进来了。
+        if item.get("source_type") == "网页资料" and len(original_title) > 420:
+            continue
+
+        item["title"] = _compact_title(original_title, 220)
+        item["snippet"] = snippet[:650]
+        item["_score"] = _quality_score(item, question)
+        clean.append(item)
+
+    clean = _dedupe(clean)
+    clean.sort(
+        key=lambda x: (
+            x.get("_score", 0),
+            int(x.get("year") or 0) if str(x.get("year") or "").isdigit() else 0,
+        ),
+        reverse=True,
+    )
+
+    for x in clean:
+        x.pop("_score", None)
+
+    return clean[:limit]
+
+
 def build_query(question: str) -> str:
     q = str(question or "").strip()
     chunks = []
@@ -191,12 +331,12 @@ def search_web(question: str, max_results: int = 4) -> List[Dict]:
         if title and url:
             out.append({
                 "source_type": "网页资料",
-                "title": title,
+                "title": _compact_title(title, 220),
                 "year": "",
                 "journal": "",
                 "doi": "",
                 "url": url,
-                "snippet": body[:1200],
+                "snippet": body[:650],
                 "has_abstract": False,
             })
     return out
@@ -249,7 +389,10 @@ def research_web(question: str) -> Tuple[str, List[Dict], Dict]:
             except Exception as exc:
                 status[name] = f"失败 {type(exc).__name__}"
 
-    results = _dedupe(results)[:10]
+    # 外部检索必须先经过KDP/DKDP材料相关性闸门。
+    # 这一步会过滤掉“石墨烯 vacancy”“其他有机二氢磷酸盐”
+    # 以及搜索引擎误抓取的植物学/目录页等结果。
+    results = _filter_and_rank(results, question, limit=8)
 
     blocks = []
     for i, item in enumerate(results, 1):
@@ -275,7 +418,7 @@ def source_links_markdown(sources: List[Dict]) -> str:
     lines = ["", "---", "### 补充来源"]
     for item in sources:
         no = item.get("编号", "W?")
-        title = str(item.get("title") or "来源").replace("[", "\\[").replace("]", "\\]")
+        title = _compact_title(str(item.get("title") or "来源"), 180).replace("[", "\\[").replace("]", "\\]")
         url = str(item.get("url") or "").strip()
         doi = str(item.get("doi") or "").strip()
         source_type = item.get("source_type", "")
