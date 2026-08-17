@@ -70,7 +70,21 @@ if page=="🏠 科研驾驶舱":
         st.plotly_chart(px.line(trend,x="年份",y="文献数",markers=True,title="研究趋势"),use_container_width=True)
     st.subheader("S核心50")
     top=df[df["V5推荐等级"]=="S 核心 50"].sort_values("V5科研优先分",ascending=False)
-    st.dataframe(top[["题名","年份","期刊","缺陷/应力来源","作用机制","宏观结果","_方法标签","V5科研优先分","DOI"]],use_container_width=True,hide_index=True,height=420)
+    show_cols = [
+    "题名",
+    "年份",
+    "_证据层级",
+    "V5推荐等级",
+    "详细二级分类",
+    "_方法标签",
+    "DOI"
+]
+
+st.dataframe(
+    ev[show_cols],
+    use_container_width=True,
+    hide_index=True
+)
 
 elif page=="📚 文献中心":
     st.title("📚 文献中心")
