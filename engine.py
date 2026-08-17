@@ -283,18 +283,29 @@ def topic_search(df, topic, top_k=100, scope="相关池"):
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def topic_stats(df):
-    rel = df[df["V5相关池"] == "KDP/DKDP相关池"]
+    """
+    专题规模统计必须统计“真实命中”，而不是把全库排序后全部算进去。
+    旧逻辑使用 topic_search(..., top_k=len(rel))，因此很多专题都会被统计成
+    约等于整个相关池的规模，造成“所有柱子都接近 5928”的假象。
+    """
+    rel = df[df["V5相关池"] == "KDP/DKDP相关池"].copy()
     max_year = int(rel["年份"].max()) if len(rel) else 2026
+
     rows = []
-    for topic in TOPICS:
-        d = topic_search(rel, topic, len(rel), "全部")
+    for topic, terms in TOPICS.items():
+        hit = _series_hit(rel["_text"], terms)
+        d = rel[hit].copy()
+
         rows.append({
-            "专题":topic,
-            "总文献":len(d),
-            "近5年":int((d["年份"] >= max_year-4).sum()) if len(d) else 0,
-            "S/A":int(d["V5推荐等级"].isin(["S 核心 50","A 重点 150"]).sum()) if len(d) else 0,
-            "DFT":int(d["_方法标签"].str.contains("DFT/第一性原理", regex=False).sum()) if len(d) else 0,
+            "专题": topic,
+            "总文献": int(len(d)),
+            "近5年": int((d["年份"] >= max_year - 4).sum()) if len(d) else 0,
+            "S/A": int(d["V5推荐等级"].isin(["S 核心 50", "A 重点 150"]).sum()) if len(d) else 0,
+            "DFT": int(
+                d["_方法标签"].str.contains("DFT/第一性原理", regex=False).sum()
+            ) if len(d) else 0,
         })
+
     return pd.DataFrame(rows)
 
 def compact_context(df, maxp=15):

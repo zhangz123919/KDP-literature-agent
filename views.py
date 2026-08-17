@@ -75,18 +75,55 @@ def dashboard():
     left, right = st.columns([1.04, 1], gap="large")
     with left:
         section_title("专题证据规模", "快速判断哪些问题已有较厚证据，哪些仍需补充")
-        stats = topic_stats(df).sort_values("总文献")
-        fig = px.bar(
-            stats,
-            x="总文献",
-            y="专题",
-            orientation="h",
-            color="近5年",
-            color_continuous_scale=["#CBD5E1", "#8B84E8", "#24A7BE"],
+        stats = topic_stats(df).sort_values("总文献", ascending=True)
+
+        fig = go.Figure()
+
+        # 总证据规模：低饱和背景条
+        fig.add_trace(
+            go.Bar(
+                x=stats["总文献"],
+                y=stats["专题"],
+                orientation="h",
+                name="全部相关文献",
+                marker=dict(
+                    color="#DCE4EF",
+                    line=dict(width=0),
+                ),
+                hovertemplate="<b>%{y}</b><br>全部相关文献 %{x} 篇<extra></extra>",
+            )
         )
-        fig.update_traces(marker_line_width=0, hovertemplate="<b>%{y}</b><br>总文献 %{x}<extra></extra>")
-        fig.update_layout(coloraxis_showscale=False, xaxis_title="文献数", yaxis_title="")
-        plotly(fig, height=520, key="dashboard_topics")
+
+        # 近五年：高亮覆盖
+        fig.add_trace(
+            go.Bar(
+                x=stats["近5年"],
+                y=stats["专题"],
+                orientation="h",
+                name="近五年",
+                marker=dict(
+                    color="#22AFC3",
+                    line=dict(width=0),
+                ),
+                text=stats["近5年"].where(stats["近5年"] > 0, ""),
+                textposition="outside",
+                textfont=dict(size=10, color="#5E6E84"),
+                hovertemplate="<b>%{y}</b><br>近五年 %{x} 篇<extra></extra>",
+            )
+        )
+
+        fig.update_layout(
+            barmode="overlay",
+            xaxis_title="文献数",
+            yaxis_title="",
+            bargap=.28,
+            legend=dict(
+                orientation="h",
+                x=0,
+                y=1.08,
+            ),
+        )
+        plotly(fig, height=560, key="dashboard_topics")
 
     with right:
         section_title("研究活跃度", "观察相关文献的长期增长与近期加速")
@@ -225,84 +262,194 @@ def _top_chain(chain: pd.DataFrame, top_n: int) -> pd.DataFrame:
     return chain.sort_values("文献数", ascending=False).head(top_n).copy()
 
 
-def _premium_sankey(chain: pd.DataFrame, top_n=22):
+def _relationship_matrix(chain: pd.DataFrame, top_n=28):
+    """
+    双矩阵研究路径图：
+    左：缺陷/应力来源 × 局部机制
+    右：局部机制 × 宏观后果
+
+    相比桑基图，它不会因为粗线交叉导致信息糊成一片，
+    还能直接看出“哪一对关系”证据最强。
+    """
     chain = _top_chain(chain, top_n)
 
-    sm = chain.groupby(["缺陷/应力来源", "作用机制"], as_index=False)["文献数"].sum()
-    mo = chain.groupby(["作用机制", "宏观结果"], as_index=False)["文献数"].sum()
-
-    sources = list(sm.groupby("缺陷/应力来源")["文献数"].sum().sort_values(ascending=False).index)
-    mechs = list(chain.groupby("作用机制")["文献数"].sum().sort_values(ascending=False).index)
-    outs = list(chain.groupby("宏观结果")["文献数"].sum().sort_values(ascending=False).index)
-
-    labels = sources + mechs + outs
-    idx = {x: i for i, x in enumerate(labels)}
-    colors = (
-        [COLORS["orange"]] * len(sources)
-        + ["#4C86A8"] * len(mechs)
-        + [COLORS["teal"]] * len(outs)
+    sm = (
+        chain.groupby(
+            ["缺陷/应力来源", "作用机制"],
+            as_index=False,
+        )["文献数"]
+        .sum()
     )
 
-    source, target, value, link_color, custom = [], [], [], [], []
+    mo = (
+        chain.groupby(
+            ["作用机制", "宏观结果"],
+            as_index=False,
+        )["文献数"]
+        .sum()
+    )
 
-    source_color_map = {
-        s: ["#E87755", "#D95F76", "#F19A56", "#CA6F97", "#D67B5C"][i % 5]
-        for i, s in enumerate(sources)
-    }
+    sources = list(
+        sm.groupby("缺陷/应力来源")["文献数"]
+        .sum()
+        .sort_values(ascending=False)
+        .index
+    )
 
-    for _, r in sm.iterrows():
-        source.append(idx[r["缺陷/应力来源"]])
-        target.append(idx[r["作用机制"]])
-        value.append(int(r["文献数"]))
-        link_color.append(_rgba(source_color_map[r["缺陷/应力来源"]], .22))
-        custom.append(f"{r['缺陷/应力来源']} → {r['作用机制']}<br>{int(r['文献数'])} 篇")
+    mechs = list(
+        chain.groupby("作用机制")["文献数"]
+        .sum()
+        .sort_values(ascending=False)
+        .index
+    )
 
-    for _, r in mo.iterrows():
-        source.append(idx[r["作用机制"]])
-        target.append(idx[r["宏观结果"]])
-        value.append(int(r["文献数"]))
-        link_color.append(_rgba(COLORS["cyan"], .17))
-        custom.append(f"{r['作用机制']} → {r['宏观结果']}<br>{int(r['文献数'])} 篇")
+    outcomes = list(
+        mo.groupby("宏观结果")["文献数"]
+        .sum()
+        .sort_values(ascending=False)
+        .index
+    )
 
-    n_source, n_mech, n_out = len(sources), len(mechs), len(outs)
-    node_x = [0.02] * n_source + [0.50] * n_mech + [0.98] * n_out
-
-    fig = go.Figure(
-        go.Sankey(
-            arrangement="snap",
-            orientation="h",
-            node=dict(
-                label=labels,
-                color=colors,
-                pad=25,
-                thickness=16,
-                x=node_x,
-                line=dict(color="rgba(255,255,255,.32)", width=.7),
-                hovertemplate="<b>%{label}</b><extra></extra>",
-            ),
-            link=dict(
-                source=source,
-                target=target,
-                value=value,
-                color=link_color,
-                customdata=custom,
-                hovertemplate="%{customdata}<extra></extra>",
-            ),
+    sm_pivot = (
+        sm.pivot(
+            index="缺陷/应力来源",
+            columns="作用机制",
+            values="文献数",
         )
+        .fillna(0)
+        .reindex(index=sources, columns=mechs)
     )
-    fig.update_layout(
-        title=dict(
-            text="来源 → 机制 → 后果",
-            x=.02,
-            font=dict(size=17, color="#EEF4FB"),
+
+    mo_pivot = (
+        mo.pivot(
+            index="作用机制",
+            columns="宏观结果",
+            values="文献数",
+        )
+        .fillna(0)
+        .reindex(index=mechs, columns=outcomes)
+    )
+
+    from plotly.subplots import make_subplots
+
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        horizontal_spacing=.13,
+        subplot_titles=(
+            "缺陷 / 应力来源  ×  局部机制",
+            "局部机制  ×  宏观后果",
         ),
+    )
+
+    colorscale = [
+        [0.00, "#0E1728"],
+        [0.14, "#17233B"],
+        [0.35, "#314269"],
+        [0.62, "#5D63C8"],
+        [0.82, "#4A8FC1"],
+        [1.00, "#20B6B0"],
+    ]
+
+    fig.add_trace(
+        go.Heatmap(
+            z=sm_pivot.values,
+            x=sm_pivot.columns,
+            y=sm_pivot.index,
+            colorscale=colorscale,
+            zmin=0,
+            showscale=False,
+            text=np.where(
+                sm_pivot.values > 0,
+                sm_pivot.values.astype(int).astype(str),
+                "",
+            ),
+            texttemplate="%{text}",
+            textfont=dict(size=12, color="#F2F6FB"),
+            hovertemplate=(
+                "<b>%{y}</b><br>"
+                "→ %{x}<br>"
+                "证据文献 %{z:.0f} 篇"
+                "<extra></extra>"
+            ),
+            xgap=4,
+            ygap=4,
+        ),
+        row=1,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Heatmap(
+            z=mo_pivot.values,
+            x=mo_pivot.columns,
+            y=mo_pivot.index,
+            colorscale=colorscale,
+            zmin=0,
+            showscale=True,
+            colorbar=dict(
+                title="文献数",
+                thickness=10,
+                len=.70,
+                x=1.02,
+                tickfont=dict(color="#AFC0D5"),
+                titlefont=dict(color="#AFC0D5"),
+            ),
+            text=np.where(
+                mo_pivot.values > 0,
+                mo_pivot.values.astype(int).astype(str),
+                "",
+            ),
+            texttemplate="%{text}",
+            textfont=dict(size=12, color="#F2F6FB"),
+            hovertemplate=(
+                "<b>%{y}</b><br>"
+                "→ %{x}<br>"
+                "证据文献 %{z:.0f} 篇"
+                "<extra></extra>"
+            ),
+            xgap=4,
+            ygap=4,
+        ),
+        row=1,
+        col=2,
+    )
+
+    fig.update_layout(
         paper_bgcolor="#0B1220",
         plot_bgcolor="#0B1220",
-        font=dict(color="#DDE7F4", size=12),
-        margin=dict(l=28, r=28, t=70, b=28),
+        height=610,
+        margin=dict(l=30, r=90, t=80, b=30),
+        font=dict(
+            family='Inter, "Microsoft YaHei", Arial',
+            color="#DCE7F4",
+            size=12,
+        ),
     )
-    return fig
 
+    fig.update_annotations(
+        font=dict(
+            color="#EEF4FA",
+            size=15,
+        )
+    )
+
+    fig.update_xaxes(
+        side="top",
+        tickangle=-22,
+        tickfont=dict(color="#B7C5D7", size=11),
+        showgrid=False,
+        zeroline=False,
+    )
+
+    fig.update_yaxes(
+        tickfont=dict(color="#B7C5D7", size=11),
+        showgrid=False,
+        zeroline=False,
+        autorange="reversed",
+    )
+
+    return fig
 
 def _sphere_points(n, radius, phase):
     if n <= 0:
@@ -517,24 +664,49 @@ def knowledge_graph():
     tab1, tab2, tab3 = st.tabs(["研究主线", "3D 关系星图", "分类与关系"])
 
     with tab1:
-        c1, c2 = st.columns([1, 1])
+        c1, c2 = st.columns([1, 1.25])
         with c1:
-            top_n = st.slider("主图保留的最强关系", 10, min(40, len(chain)), min(22, len(chain)))
+            top_n = st.slider(
+                "关系矩阵保留的最强关系",
+                10,
+                min(40, len(chain)),
+                min(26, len(chain)),
+            )
         with c2:
-            soft_note("主图主动压低弱关系，只保留最能解释研究结构的路径；完整关系统计仍在第三页签。")
-        fig = _premium_sankey(chain, top_n=top_n)
-        st.plotly_chart(fig, width="stretch", theme=None, height=680, config={"displaylogo": False})
+            soft_note(
+                "研究主线已从桑基图改成“双矩阵路径图”："
+                "左边看来源如何进入机制，右边看机制如何走向后果。"
+                "颜色越亮、数字越大，说明文献证据越厚。"
+            )
 
-        section_title("最强研究路径", "从文献数量观察当前研究证据最厚的来源—机制—后果组合")
-        strongest = chain.sort_values("文献数", ascending=False).head(18).copy()
-        strongest["研究路径"] = (
-            strongest["缺陷/应力来源"] + "  →  " + strongest["作用机制"] + "  →  " + strongest["宏观结果"]
-        )
-        st.dataframe(
-            strongest[["研究路径", "文献数"]],
+        fig = _relationship_matrix(chain, top_n=top_n)
+        st.plotly_chart(
+            fig,
             width="stretch",
-            height=410,
-            hide_index=True,
+            theme=None,
+            height=610,
+            config={"displaylogo": False},
+        )
+
+        section_title(
+            "最强研究路径",
+            "把双矩阵中的高强度关系重新组合成完整的来源—机制—后果路径",
+        )
+
+        strongest = (
+            chain.sort_values("文献数", ascending=False)
+            .head(12)
+            .copy()
+        )
+
+        mini_cards(
+            [
+                (
+                    f"{r['缺陷/应力来源']}  →  {r['作用机制']}  →  {r['宏观结果']}",
+                    f"当前文献库关联证据：{int(r['文献数'])} 篇",
+                )
+                for _, r in strongest.iterrows()
+            ]
         )
 
     with tab2:
