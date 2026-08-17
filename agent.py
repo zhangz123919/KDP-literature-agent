@@ -6,6 +6,7 @@ from openai import OpenAI
 
 from engine import compact_context
 from web_research import research_web, source_links_markdown
+from security import enforce_ai_quota, validate_user_text
 
 
 SYSTEM = """
@@ -128,6 +129,10 @@ Web={web_status.get('web')}
 
 
 def stream_agent(question, evidence_df, task="自动判断", extra=""):
+    enforce_ai_quota()
+    question = validate_user_text(question, "科研问题")
+    extra = validate_user_text(extra, "额外条件")
+
     """
     事件流：
     stage     -> 页面进度提示
@@ -194,6 +199,12 @@ def stream_agent(question, evidence_df, task="自动判断", extra=""):
     else:
         kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
         kwargs["temperature"] = 0.15
+
+    max_tokens = _secret("AI_MAX_OUTPUT_TOKENS", 8000)
+    try:
+        kwargs["max_tokens"] = int(max_tokens)
+    except Exception:
+        pass
 
     response = client.chat.completions.create(**kwargs)
 

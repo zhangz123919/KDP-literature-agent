@@ -14,6 +14,7 @@ from agent import api_status, run_agent, stream_agent
 from diagnosis import VARIABLES, diagnose, experiment_matrix
 from engine import TOPICS, load_data, offline_summary, search_papers, topic_search, topic_stats
 from reports import docx_bytes, excel_bytes
+from security import safe_error
 from ui import (
     COLORS,
     evidence_table,
@@ -816,7 +817,7 @@ def topic_review():
             status.update(label="专题调研生成完成", state="complete", expanded=False)
         except Exception as exc:
             status.update(label="AI 调用失败", state="error")
-            st.error(f"DeepSeek 调用失败：{exc}")
+            safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
             return
 
         with st.container(border=True):
@@ -874,7 +875,7 @@ def compare():
                 st.markdown(answer)
             sources_block(sources)
         except Exception as exc:
-            st.error(f"DeepSeek 调用失败：{exc}")
+            safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
 
 def crack_diagnosis():
@@ -960,7 +961,7 @@ def crack_diagnosis():
                 st.markdown(answer)
             sources_block(sources)
         except Exception as exc:
-            st.error(f"DeepSeek 调用失败：{exc}")
+            safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
 
 def experiment_design():
@@ -1070,7 +1071,7 @@ def theory():
                 st.markdown(answer)
             sources_block(sources)
         except Exception as exc:
-            st.error(f"DeepSeek 调用失败：{exc}")
+            safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
 
 def gaps():
@@ -1135,7 +1136,7 @@ def gaps():
                 st.markdown(answer)
             sources_block(sources)
         except Exception as exc:
-            st.error(f"DeepSeek 调用失败：{exc}")
+            safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
 
 def ai_agent():
@@ -1220,7 +1221,7 @@ def ai_agent():
             answer_box.markdown(answer)
         except Exception as exc:
             status.update(label="AI 调用失败", state="error")
-            st.error(f"DeepSeek 调用失败：{exc}")
+            safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
             return
 
     sources_block(sources)
@@ -1281,7 +1282,7 @@ def reports():
             topic + "_" + kind + ".docx",
         )
     except Exception as exc:
-        st.error(f"DeepSeek 调用失败：{exc}")
+        safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
 
 def audit():
