@@ -86,7 +86,7 @@ def _detect_intent(query):
             return name, rule
     return None, None
 
-@st.cache_data(show_spinner="正在读取文献数据库……")
+@st.cache_resource(show_spinner="首次载入文献库……")
 def load_data():
     if not DATA_PATH.exists():
         return pd.DataFrame()
@@ -281,6 +281,7 @@ def search_papers(df, q, top_k=100, scope="相关池"):
 def topic_search(df, topic, top_k=100, scope="相关池"):
     return search_papers(df, " ".join(TOPICS.get(topic,[topic])), top_k, scope)
 
+@st.cache_data(show_spinner=False, ttl=3600)
 def topic_stats(df):
     rel = df[df["V5相关池"] == "KDP/DKDP相关池"]
     max_year = int(rel["年份"].max()) if len(rel) else 2026
