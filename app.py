@@ -21,7 +21,7 @@ from views import (
 )
 
 st.set_page_config(
-    page_title="KDP/DKDP Research OS",
+    page_title="KDP/DKDP 研究工作台",
     page_icon="K",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -98,10 +98,10 @@ pages = {
             url_path="gaps",
         ),
     ],
-    "智能与输出": [
+    "分析与输出": [
         st.Page(
             safe_page(ai_agent),
-            title="AI 科研智能体",
+            title="科研问答",
             icon=":material/smart_toy:",
             url_path="ai",
         ),

@@ -40,29 +40,29 @@ def sidebar_security():
     """
     st.sidebar.markdown("---")
     st.sidebar.markdown(
-        "<div style='font-size:11px;color:#7889A1;letter-spacing:.12em;font-weight:700;'>ACCESS CONTROL</div>",
+        "<div style='font-size:11px;color:#7889A1;letter-spacing:.12em;font-weight:700;'>ACCESS</div>",
         unsafe_allow_html=True,
     )
 
     if not access_code_enabled():
-        st.sidebar.caption("公开浏览已启用；AI访问码尚未配置。会话限流仍然生效。")
+        st.sidebar.caption("公开浏览已启用；模型访问码尚未配置。会话限流仍然生效。")
         return
 
     if ai_unlocked():
-        st.sidebar.success("AI / 报告生成功能已解锁")
-        if st.sidebar.button("锁定 AI 功能", key="_kdp_lock_ai", width="stretch"):
+        st.sidebar.success("模型分析与报告生成功能已解锁")
+        if st.sidebar.button("锁定模型功能", key="_kdp_lock_ai", width="stretch"):
             st.session_state["_kdp_ai_unlocked"] = False
             st.rerun()
         return
 
     code = st.sidebar.text_input(
-        "AI 访问码",
+        "访问码",
         type="password",
         key="_kdp_access_code_input",
-        placeholder="输入访问码后解锁AI功能",
+        placeholder="输入访问码后解锁模型分析",
     )
 
-    if st.sidebar.button("解锁 AI 功能", key="_kdp_unlock_ai", width="stretch"):
+    if st.sidebar.button("解锁模型功能", key="_kdp_unlock_ai", width="stretch"):
         expected = str(_secret("APP_ACCESS_CODE", "") or "")
         if hmac.compare_digest(str(code or ""), expected):
             st.session_state["_kdp_ai_unlocked"] = True
@@ -91,7 +91,7 @@ def enforce_ai_quota():
     注：这是公开科研演示站的轻量保护，不等同于企业级账号/计费系统。
     """
     if not ai_unlocked():
-        raise PermissionError("AI功能需要访问码。请先在左侧边栏解锁。")
+        raise PermissionError("模型分析功能需要访问码。请先在左侧边栏解锁。")
 
     max_calls = _int_secret("AI_MAX_CALLS_PER_SESSION", 20)
     cooldown = _int_secret("AI_COOLDOWN_SECONDS", 4)

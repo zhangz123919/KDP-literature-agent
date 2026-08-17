@@ -502,6 +502,483 @@ div[data-testid="stDataFrame"] {{
     .kdp-hero {{ padding: 21px 20px; }}
     .kdp-hero-title {{ font-size: 24px; }}
 }}
+
+/* ========================================================================
+   Scholarly Workspace refinement
+   ======================================================================== */
+
+:root {{
+    --lab-navy: #12233F;
+    --lab-blue: #2457D6;
+    --lab-blue-2: #2F6BEE;
+    --lab-cyan: #0EA5B7;
+    --lab-ink: #142033;
+    --lab-text: #26364D;
+    --lab-muted: #52637A;
+    --lab-subtle: #6E7D91;
+    --lab-line: #D9E1EA;
+    --lab-line-strong: #C9D4E1;
+    --lab-bg: #F5F7FA;
+    --lab-paper: #FFFFFF;
+    --lab-soft-blue: #EEF4FF;
+}}
+
+.stApp {{
+    background:
+        linear-gradient(rgba(18,35,63,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(18,35,63,.018) 1px, transparent 1px),
+        #F7F8FA !important;
+    background-size: 32px 32px !important;
+    color: var(--lab-ink) !important;
+}}
+
+.block-container {{
+    max-width: 1480px !important;
+    padding-top: 1.55rem !important;
+    padding-bottom: 4.5rem !important;
+    padding-left: 2.2rem !important;
+    padding-right: 2.2rem !important;
+}}
+
+header[data-testid="stHeader"] {{
+    background: rgba(247,248,250,.94) !important;
+    border-bottom: 1px solid rgba(217,225,234,.75);
+    backdrop-filter: blur(12px);
+}}
+
+section[data-testid="stSidebar"] {{
+    background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFD 100%) !important;
+    border-right: 1px solid #DCE3EC !important;
+    box-shadow: 8px 0 28px rgba(18,35,63,.025) !important;
+}}
+
+section[data-testid="stSidebar"] * {{
+    color: #253650 !important;
+}}
+
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {{
+    color: #5F6F84 !important;
+}}
+
+section[data-testid="stSidebar"] hr {{
+    border-color: #E4E9F0 !important;
+}}
+
+section[data-testid="stSidebar"] [data-testid="stNavSectionHeader"] {{
+    color: #7C8999 !important;
+    font-size: 10.5px !important;
+    font-weight: 760 !important;
+    letter-spacing: .085em !important;
+    text-transform: none !important;
+    padding-top: 18px !important;
+    padding-bottom: 5px !important;
+}}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a {{
+    margin: 2px 7px !important;
+    padding: 9px 10px !important;
+    border-radius: 10px !important;
+    transition: background .15s ease, color .15s ease !important;
+}}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a:hover {{
+    background: #F0F4FA !important;
+    transform: none !important;
+}}
+
+section[data-testid="stSidebar"] [aria-current="page"] {{
+    background: #EAF1FF !important;
+    color: #1747B5 !important;
+    box-shadow: inset 3px 0 0 #2F6BEE !important;
+}}
+
+section[data-testid="stSidebar"] [aria-current="page"] * {{
+    color: #1747B5 !important;
+    font-weight: 700 !important;
+}}
+
+.kdp-brand {{
+    padding: 17px 15px 12px 15px !important;
+    margin-bottom: 2px !important;
+}}
+
+.kdp-brand-mark {{
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 10px !important;
+    color: #FFFFFF !important;
+    background: #173F96 !important;
+    box-shadow: none !important;
+    margin-bottom: 11px !important;
+    font-size: 12px !important;
+}}
+
+.kdp-brand-title {{
+    color: #142A4B !important;
+    font-size: 15px !important;
+    font-weight: 780 !important;
+}}
+
+.kdp-brand-sub {{
+    color: #758398 !important;
+    font-size: 10.5px !important;
+    line-height: 1.55 !important;
+}}
+
+.kdp-ai-badge {{
+    margin: 13px 12px 8px 12px !important;
+    border: 1px solid #DDE5EE !important;
+    border-radius: 10px !important;
+    padding: 10px 11px !important;
+    background: #F8FAFD !important;
+    box-shadow: none !important;
+}}
+
+.kdp-ai-badge * {{
+    color: #53647A !important;
+}}
+
+.kdp-dot {{
+    box-shadow: none !important;
+}}
+
+html, body, [class*="css"] {{
+    font-family: "Inter", "SF Pro Text", "PingFang SC", "Microsoft YaHei", Arial, sans-serif !important;
+}}
+
+h1, h2, h3, h4 {{
+    color: #12233F !important;
+}}
+
+h1 {{
+    font-size: 2.05rem !important;
+    font-weight: 780 !important;
+    letter-spacing: -.035em !important;
+}}
+
+h2 {{
+    font-size: 1.42rem !important;
+    font-weight: 750 !important;
+}}
+
+h3 {{
+    font-size: 1.08rem !important;
+    font-weight: 720 !important;
+}}
+
+p,
+[data-testid="stMarkdownContainer"] p,
+label,
+.stCaption,
+[data-testid="stCaptionContainer"] {{
+    color: #52637A !important;
+    line-height: 1.65 !important;
+}}
+
+[data-testid="stWidgetLabel"] p,
+[data-testid="stWidgetLabel"] label,
+label[data-baseweb="form-control-label"] {{
+    color: #31445F !important;
+    font-size: 12.5px !important;
+    font-weight: 680 !important;
+}}
+
+.kdp-hero {{
+    border: 1px solid #D7E0EA !important;
+    border-radius: 16px !important;
+    padding: 23px 26px 22px 26px !important;
+    margin-bottom: 20px !important;
+    background:
+        linear-gradient(90deg, rgba(36,87,214,.035), transparent 45%),
+        #FFFFFF !important;
+    box-shadow: 0 6px 20px rgba(18,35,63,.035) !important;
+}}
+
+.kdp-hero::before {{
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 18px;
+    bottom: 18px;
+    width: 4px;
+    border-radius: 0 4px 4px 0;
+    background: #2F6BEE;
+}}
+
+.kdp-hero::after {{
+    width: 220px !important;
+    height: 220px !important;
+    right: -72px !important;
+    top: -94px !important;
+    border: 1px solid rgba(36,87,214,.07) !important;
+    box-shadow:
+        0 0 0 30px rgba(36,87,214,.018),
+        0 0 0 65px rgba(14,165,183,.012) !important;
+}}
+
+.kdp-eyebrow {{
+    color: #3158A7 !important;
+    background: #F1F5FC !important;
+    border: 1px solid #DFE7F2 !important;
+    letter-spacing: .11em !important;
+    font-size: 9.5px !important;
+    font-weight: 760 !important;
+    padding: 5px 9px !important;
+    margin-bottom: 10px !important;
+}}
+
+.kdp-hero-title {{
+    color: #12233F !important;
+    font-size: 30px !important;
+    font-weight: 800 !important;
+    letter-spacing: -.04em !important;
+}}
+
+.kdp-hero-sub {{
+    color: #56677E !important;
+    font-size: 12.5px !important;
+    line-height: 1.7 !important;
+    max-width: 980px !important;
+}}
+
+.kdp-metric-grid {{
+    gap: 11px !important;
+    margin-bottom: 22px !important;
+}}
+
+.kdp-metric-card {{
+    min-height: 106px !important;
+    padding: 16px 17px 15px 18px !important;
+    border-radius: 13px !important;
+    border: 1px solid #DAE2EC !important;
+    background: #FFFFFF !important;
+    box-shadow: 0 4px 15px rgba(18,35,63,.03) !important;
+}}
+
+.kdp-metric-label {{
+    color: #5E6F84 !important;
+    font-size: 11px !important;
+    font-weight: 690 !important;
+}}
+
+.kdp-metric-value {{
+    color: #12233F !important;
+    font-size: 26px !important;
+    font-weight: 800 !important;
+}}
+
+.kdp-metric-note {{
+    color: #738196 !important;
+    font-size: 10.5px !important;
+}}
+
+.kdp-section-title {{
+    color: #152A48 !important;
+    font-size: 18px !important;
+    font-weight: 770 !important;
+}}
+
+.kdp-section-sub {{
+    color: #66778D !important;
+    font-size: 11.5px !important;
+}}
+
+div[data-testid="stVerticalBlockBorderWrapper"] {{
+    border: 1px solid #D9E1EA !important;
+    border-radius: 14px !important;
+    background: #FFFFFF !important;
+    box-shadow: 0 4px 14px rgba(18,35,63,.025) !important;
+}}
+
+div[data-testid="stForm"] {{
+    border: 1px solid #D9E1EA !important;
+    border-radius: 14px !important;
+    background: #FFFFFF !important;
+    box-shadow: none !important;
+}}
+
+div[data-baseweb="input"] > div,
+div[data-baseweb="textarea"] > div,
+div[data-baseweb="select"] > div {{
+    background: #FFFFFF !important;
+    border: 1px solid #CCD7E4 !important;
+    border-radius: 9px !important;
+    min-height: 43px !important;
+    box-shadow: 0 1px 2px rgba(18,35,63,.015) !important;
+}}
+
+div[data-baseweb="input"] input,
+div[data-baseweb="textarea"] textarea,
+input,
+textarea {{
+    color: #25364E !important;
+    font-size: 13px !important;
+}}
+
+input::placeholder,
+textarea::placeholder {{
+    color: #8995A5 !important;
+    opacity: 1 !important;
+}}
+
+div[data-baseweb="input"] > div:focus-within,
+div[data-baseweb="textarea"] > div:focus-within,
+div[data-baseweb="select"] > div:focus-within {{
+    border-color: #4A72CF !important;
+    box-shadow: 0 0 0 3px rgba(47,107,238,.075) !important;
+}}
+
+[data-testid="stRadio"] label p,
+[data-testid="stCheckbox"] label p {{
+    color: #3D4E65 !important;
+    font-weight: 560 !important;
+}}
+
+.stButton > button,
+.stDownloadButton > button {{
+    border-radius: 9px !important;
+    border: 1px solid #CAD5E2 !important;
+    background: #FFFFFF !important;
+    color: #263B57 !important;
+    min-height: 41px !important;
+    font-weight: 680 !important;
+    box-shadow: none !important;
+}}
+
+.stButton > button:hover,
+.stDownloadButton > button:hover {{
+    transform: none !important;
+    background: #F6F9FD !important;
+    border-color: #AEBFD2 !important;
+    box-shadow: none !important;
+}}
+
+.stButton > button[kind="primary"] {{
+    color: #FFFFFF !important;
+    border: 1px solid #2457D6 !important;
+    background: #2457D6 !important;
+    box-shadow: 0 4px 12px rgba(36,87,214,.16) !important;
+}}
+
+.stButton > button[kind="primary"]:hover {{
+    background: #1E4CBF !important;
+    border-color: #1E4CBF !important;
+}}
+
+button[data-baseweb="tab"] {{
+    color: #607188 !important;
+    font-weight: 650 !important;
+    border-radius: 0 !important;
+}}
+
+button[data-baseweb="tab"][aria-selected="true"] {{
+    color: #1747B5 !important;
+    font-weight: 740 !important;
+}}
+
+[data-testid="stSegmentedControl"] button {{
+    background: #FFFFFF !important;
+    border-color: #D6DFEA !important;
+    color: #52637A !important;
+    font-weight: 640 !important;
+}}
+
+[data-testid="stSegmentedControl"] button[aria-pressed="true"],
+[data-testid="stSegmentedControl"] button[data-active="true"] {{
+    background: #EAF1FF !important;
+    color: #1747B5 !important;
+    border-color: #B8CBEF !important;
+}}
+
+div[data-testid="stDataFrame"] {{
+    border: 1px solid #D9E1EA !important;
+    border-radius: 12px !important;
+    background: #FFFFFF !important;
+    box-shadow: none !important;
+}}
+
+[data-testid="stAlert"] {{
+    border-radius: 10px !important;
+    border: 1px solid #D7E0EB !important;
+    box-shadow: none !important;
+}}
+
+[data-testid="stExpander"] {{
+    border: 1px solid #D9E1EA !important;
+    border-radius: 10px !important;
+    background: #FFFFFF !important;
+}}
+
+.kdp-chain-step {{
+    border: 1px solid #D9E1EA !important;
+    border-radius: 12px !important;
+    background: #FFFFFF !important;
+    box-shadow: none !important;
+}}
+
+.kdp-chain-name {{
+    color: #182D4B !important;
+}}
+
+.kdp-chain-desc {{
+    color: #596A80 !important;
+    font-size: 10.8px !important;
+}}
+
+.kdp-soft-note {{
+    border: 1px solid #D7E1F1 !important;
+    border-left: 3px solid #5A79C9 !important;
+    border-radius: 9px !important;
+    background: #F7F9FD !important;
+    color: #506178 !important;
+}}
+
+.kdp-mini-card {{
+    border: 1px solid #D9E1EA !important;
+    background: #FFFFFF !important;
+    border-radius: 11px !important;
+    box-shadow: none !important;
+}}
+
+.kdp-mini-title {{
+    color: #182D4B !important;
+}}
+
+.kdp-mini-text {{
+    color: #5F7086 !important;
+}}
+
+[data-testid="stMetricLabel"] p {{
+    color: #52637A !important;
+    font-weight: 650 !important;
+}}
+
+[data-testid="stMetricValue"] {{
+    color: #1C3150 !important;
+}}
+
+button:disabled,
+input:disabled,
+textarea:disabled,
+[aria-disabled="true"] {{
+    opacity: .76 !important;
+}}
+
+@media (max-width: 720px) {{
+    .block-container {{
+        padding-left: .9rem !important;
+        padding-right: .9rem !important;
+    }}
+
+    .kdp-hero {{
+        padding: 20px 18px !important;
+    }}
+
+    .kdp-hero-title {{
+        font-size: 25px !important;
+    }}
+}}
+
 </style>
 """,
         unsafe_allow_html=True,
@@ -513,8 +990,8 @@ def sidebar_brand():
         """
 <div class="kdp-brand">
     <div class="kdp-brand-mark">KDP</div>
-    <div class="kdp-brand-title">KDP/DKDP Research OS</div>
-    <div class="kdp-brand-sub">晶体缺陷 · 开裂 · 激光损伤<br>科研智能工作台</div>
+    <div class="kdp-brand-title">KDP/DKDP 研究工作台</div>
+    <div class="kdp-brand-sub">晶体缺陷 · 开裂 · 激光损伤<br>缺陷与开裂研究平台</div>
 </div>
 """,
         unsafe_allow_html=True,
@@ -527,7 +1004,7 @@ def sidebar_ai_status(ok: bool, model: str):
     st.sidebar.markdown(
         f"""
 <div class="kdp-ai-badge">
-    <div style="font-size:11px;color:#8FA0B8;margin-bottom:5px;">AI SERVICE</div>
+    <div style="font-size:11px;color:#8FA0B8;margin-bottom:5px;">MODEL SERVICE</div>
     <div style="font-size:12px;font-weight:650;color:#EAF0F8;">
         <span class="kdp-dot" style="background:{color};"></span>{html.escape(label)}
     </div>
@@ -535,10 +1012,10 @@ def sidebar_ai_status(ok: bool, model: str):
 """,
         unsafe_allow_html=True,
     )
-    st.sidebar.caption("文献优先级不删库；联网检索自动参与科研回答。")
+    st.sidebar.caption("文献优先级不删库；联网检索按需参与分析，结果保留来源。")
 
 
-def page_header(title: str, subtitle: str, eyebrow: str = "KDP/DKDP RESEARCH OS"):
+def page_header(title: str, subtitle: str, eyebrow: str = "KDP/DKDP RESEARCH WORKSPACE"):
     st.markdown(
         f"""
 <div class="kdp-hero">
@@ -635,8 +1112,8 @@ def style_plot(fig: go.Figure, *, dark: bool = False, height: int | None = None)
         bg = "rgba(255,255,255,0)"
         paper = "rgba(255,255,255,0)"
         text = COLORS["ink"]
-        grid = "#E7ECF3"
-        muted = "#738197"
+        grid = "#DDE4ED"
+        muted = "#5F7087"
 
     fig.update_layout(
         paper_bgcolor=paper,
