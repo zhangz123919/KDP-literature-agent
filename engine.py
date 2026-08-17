@@ -118,21 +118,597 @@ def load_data():
     df["V5推荐等级"]=tier
     return df
 
-def _tokens(q): return list(dict.fromkeys(re.findall(r"[a-z0-9+\-]{2,}|[\u4e00-\u9fff]{2,}",str(q or "").lower())))
-def search_papers(df,q,top_k=100,scope="相关池"):
-    w=df.copy()
-    if scope=="相关池":w=w[w["V5相关池"]=="KDP/DKDP相关池"]
-    elif scope=="S+A":w=w[w["V5推荐等级"].isin(["S 核心 50","A 重点 150"])]
-    if not q:return w.sort_values(["V5科研优先分","被引次数"],ascending=False).head(top_k)
-    score=pd.Series(0.0,index=w.index)
-    for c,wt in {"题名":9,"详细二级分类":7,"作者关键词":5,"Keywords Plus":3,"研究方法":3,"自动主要结论":3,"摘要":1}.items():
-        text=w[c].fillna("").astype(str).str.lower()
-        for t in _tokens(q):score+=text.str.contains(t,regex=False).astype(float)*wt
-    score+=w["V5科研优先分"]/35
-    out=w.copy();out["_s"]=score
-    return out[out["_s"]>0].sort_values(["_s","V5科研优先分"],ascending=False).head(top_k).drop(columns="_s")
+# =========================
+# V5 科研检索引擎
+# 主题识别 → 强约束召回 → 同义词扩展 → 二次排序
+# =========================
 
-def topic_search(df,topic,top_k=100,scope="相关池"):return search_papers(df," ".join(TOPICS.get(topic,[topic])),top_k,scope)
+INTENT_RULES = {
+    "氢空位": {
+        "triggers": [
+            "氢空位", "质子空位", "质子缺失",
+            "hydrogen vacancy", "proton vacancy", "h vacancy"
+        ],
+        "must": [
+            "氢空位", "质子空位", "质子缺失",
+            "hydrogen vacancy", "proton vacancy", "h vacancy",
+            "hydrogen defect"
+        ],
+        "boost": [
+            "extra absorption", "optical absorption", "absorption",
+            "defect level", "defect state", "density of states",
+            "electronic structure", "localized state",
+            "charged vacancy", "positive vacancy",
+            "额外吸收", "光吸收", "缺陷能级", "缺陷态",
+            "态密度", "电子结构", "局域态", "带正电"
+        ],
+    },
+
+    "晶体开裂": {
+        "triggers": [
+            "开裂", "裂纹", "断裂",
+            "crack", "cracking", "fracture", "microcrack"
+        ],
+        "must": [
+            "crack", "cracking", "fracture", "microcrack",
+            "开裂", "裂纹", "断裂"
+        ],
+        "boost": [
+            "thermal stress", "residual stress", "stress concentration",
+            "inclusion", "dislocation", "seed crystal",
+            "热应力", "残余应力", "应力集中",
+            "包裹体", "位错", "籽晶"
+        ],
+    },
+
+    "包裹体": {
+        "triggers": [
+            "包裹体", "夹杂", "散射中心",
+            "inclusion", "scattering center"
+        ],
+        "must": [
+            "inclusion", "solution inclusion", "particle inclusion",
+            "scattering center", "包裹体", "夹杂", "散射中心"
+        ],
+        "boost": [
+            "stress", "strain", "crack", "laser damage",
+            "growth defect", "scattering",
+            "应力", "应变", "裂纹", "激光损伤", "生长缺陷"
+        ],
+    },
+
+    "过饱和度": {
+        "triggers": [
+            "过饱和度", "supersaturation", "快速生长", "rapid growth"
+        ],
+        "must": [
+            "supersaturation", "rapid growth", "fast growth",
+            "growth rate", "过饱和度", "快速生长", "生长速率"
+        ],
+        "boost": [
+            "interface", "inclusion", "dislocation",
+            "growth sector", "growth defect",
+            "界面", "包裹体", "位错", "生长扇区", "生长缺陷"
+        ],
+    },
+
+    "籽晶/固定": {
+        "triggers": [
+            "籽晶", "固定方式", "取向", "夹持",
+            "seed crystal", "seed orientation", "fixation"
+        ],
+        "must": [
+            "seed crystal", "seed orientation", "seed",
+            "holder", "fixation", "mounting",
+            "籽晶", "取向", "固定", "夹持"
+        ],
+        "boost": [
+            "crack", "stress", "growth",
+            "裂纹", "应力", "生长"
+        ],
+    },
+
+    "亚表面损伤": {
+        "triggers": [
+            "亚表面", "加工损伤", "subsurface damage",
+            "sub-surface damage", "polishing"
+        ],
+        "must": [
+            "subsurface damage", "sub-surface damage",
+            "surface damage", "polishing", "grinding",
+            "diamond turning", "fly cutting",
+            "亚表面损伤", "表面损伤", "抛光", "研磨", "飞切"
+        ],
+        "boost": [
+            "crack", "microcrack", "residual stress",
+            "laser damage", "裂纹", "残余应力", "激光损伤"
+        ],
+    },
+
+    "激光损伤": {
+        "triggers": [
+            "激光损伤", "损伤阈值", "lidt",
+            "laser damage", "damage threshold"
+        ],
+        "must": [
+            "laser damage", "laser-induced damage",
+            "lidt", "damage threshold", "breakdown",
+            "激光损伤", "损伤阈值", "击穿"
+        ],
+        "boost": [
+            "defect", "absorption", "inclusion", "impurity",
+            "vacancy", "缺陷", "吸收", "包裹体", "杂质", "空位"
+        ],
+    },
+
+    "第一性原理": {
+        "triggers": [
+            "第一性原理", "dft", "first principles",
+            "density functional theory", "形成能", "态密度"
+        ],
+        "must": [
+            "first principles", "first-principles",
+            "density functional theory", "dft",
+            "formation energy", "density of states",
+            "第一性原理", "形成能", "态密度"
+        ],
+        "boost": [
+            "defect", "vacancy", "electronic structure",
+            "optical absorption", "缺陷", "空位", "电子结构", "吸收"
+        ],
+    },
+
+    "杂质": {
+        "triggers": [
+            "杂质", "掺杂", "impurity", "dopant", "doping"
+        ],
+        "must": [
+            "impurity", "dopant", "doping",
+            "metal ion", "transition metal",
+            "杂质", "掺杂", "金属离子"
+        ],
+        "boost": [
+            "absorption", "defect", "laser damage",
+            "growth", "吸收", "缺陷", "激光损伤", "生长"
+        ],
+    },
+}
+
+
+DOMAIN_TERMS = [
+    "氢空位", "质子空位", "质子缺失",
+    "钾空位", "氧空位", "包裹体", "散射中心",
+    "位错", "开裂", "裂纹", "热应力",
+    "过饱和度", "快速生长", "籽晶", "固定方式",
+    "亚表面损伤", "激光损伤", "损伤阈值",
+    "弱吸收", "第一性原理", "形成能", "态密度",
+    "电子结构", "杂质", "掺杂", "氘化"
+]
+
+
+def _term_pattern(term):
+    """
+    英文短词使用边界匹配。
+    例如 KDP 不再错误匹配 DKDP。
+    """
+    term = str(term).lower().strip()
+
+    if re.fullmatch(r"[a-z0-9+\-]+", term):
+        return rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])"
+
+    return re.escape(term)
+
+
+def _series_hit(series, terms):
+    s = series.fillna("").astype(str).str.lower()
+    result = pd.Series(False, index=s.index)
+
+    for term in terms:
+        result |= s.str.contains(
+            _term_pattern(term),
+            regex=True
+        )
+
+    return result
+
+
+def _series_count(series, terms):
+    s = series.fillna("").astype(str).str.lower()
+    result = pd.Series(0.0, index=s.index)
+
+    for term in terms:
+        result += s.str.contains(
+            _term_pattern(term),
+            regex=True
+        ).astype(float)
+
+    return result
+
+
+def _detect_intent(query):
+    q = str(query or "").lower()
+
+    for intent, rule in INTENT_RULES.items():
+        for trigger in rule["triggers"]:
+            if trigger.lower() in q:
+                return intent, rule
+
+    return None, None
+
+
+def _generic_terms(query):
+    q = str(query or "").lower()
+
+    terms = re.findall(
+        r"[a-z][a-z0-9+\-]{1,}",
+        q
+    )
+
+    for term in DOMAIN_TERMS:
+        if term in query:
+            terms.append(term)
+
+    stop_words = {
+        "为什么", "可能", "如何", "请基于",
+        "文献库", "给出", "证据",
+        "研究", "分析", "比较",
+        "the", "and", "why", "how",
+        "based", "paper", "papers"
+    }
+
+    terms = [
+        x for x in terms
+        if x not in stop_words
+    ]
+
+    return list(dict.fromkeys(terms))
+
+
+def search_papers(df, q, top_k=100, scope="相关池"):
+
+    work = df.copy()
+
+    # ---------- 检索范围 ----------
+    if scope == "相关池":
+        work = work[
+            work["V5相关池"] == "KDP/DKDP相关池"
+        ]
+
+    elif scope == "S+A":
+        work = work[
+            work["V5推荐等级"].isin(
+                ["S 核心 50", "A 重点 150"]
+            )
+        ]
+
+    if work.empty:
+        return work
+
+
+    # ---------- 没输入问题 ----------
+    if not q:
+        return work.sort_values(
+            ["V5科研优先分", "被引次数"],
+            ascending=False
+        ).head(top_k)
+
+
+    # ---------- 准备字段 ----------
+    title = work["题名"].fillna("").astype(str)
+
+    keywords = (
+        work["作者关键词"].fillna("").astype(str)
+        + " "
+        + work["Keywords Plus"].fillna("").astype(str)
+        + " "
+        + work["详细二级分类"].fillna("").astype(str)
+    )
+
+    abstract = work["摘要"].fillna("").astype(str)
+
+    conclusion = (
+        work["自动主要结论"].fillna("").astype(str)
+        + " "
+        + work["自动研究问题"].fillna("").astype(str)
+    )
+
+    all_text = (
+        title + " "
+        + keywords + " "
+        + abstract + " "
+        + conclusion
+    )
+
+
+    # ---------- 基础分 ----------
+    score = (
+        work["V5科研优先分"].fillna(0)
+        / 40.0
+    )
+
+
+    # ---------- 普通关键词得分 ----------
+    generic_terms = _generic_terms(q)
+
+    for term in generic_terms:
+
+        score += (
+            _series_hit(title, [term]).astype(float)
+            * 9.0
+        )
+
+        score += (
+            _series_hit(keywords, [term]).astype(float)
+            * 6.0
+        )
+
+        score += (
+            _series_hit(conclusion, [term]).astype(float)
+            * 3.5
+        )
+
+        score += (
+            _series_hit(abstract, [term]).astype(float)
+            * 1.5
+        )
+
+
+    # ==================================
+    # 材料体系约束
+    # ==================================
+
+    q_lower = str(q).lower()
+
+    kdp_terms = [
+        "kdp",
+        "kh2po4",
+        "potassium dihydrogen phosphate"
+    ]
+
+    dkdp_terms = [
+        "dkdp",
+        "kd2po4",
+        "deuterated potassium dihydrogen phosphate"
+    ]
+
+    adp_terms = [
+        "adp",
+        "ammonium dihydrogen phosphate"
+    ]
+
+    kdp_hit = _series_hit(all_text, kdp_terms)
+    dkdp_hit = _series_hit(all_text, dkdp_terms)
+    adp_hit = _series_hit(all_text, adp_terms)
+
+
+    # 用户明确问 KDP 时
+    if "kdp" in q_lower and "dkdp" not in q_lower:
+
+        score += (
+            kdp_hit.astype(float)
+            * 12.0
+        )
+
+        # DKDP/ADP可作为比较背景，但不能压过KDP
+        score += (
+            dkdp_hit.astype(float)
+            * 2.0
+        )
+
+        score += (
+            adp_hit.astype(float)
+            * 1.5
+        )
+
+
+    # ==================================
+    # 科研主题识别
+    # ==================================
+
+    intent_name, rule = _detect_intent(q)
+
+    evidence_level = pd.Series(
+        "背景/间接证据",
+        index=work.index
+    )
+
+    if rule is not None:
+
+        must_title = _series_count(
+            title,
+            rule["must"]
+        )
+
+        must_keywords = _series_count(
+            keywords,
+            rule["must"]
+        )
+
+        must_abstract = _series_count(
+            abstract,
+            rule["must"]
+        )
+
+        must_conclusion = _series_count(
+            conclusion,
+            rule["must"]
+        )
+
+
+        # 任何位置直接命中核心科研对象
+        direct_mask = (
+            (must_title > 0)
+            | (must_keywords > 0)
+            | (must_abstract > 0)
+            | (must_conclusion > 0)
+        )
+
+
+        # 直接文献额外强加分
+        score += (
+            direct_mask.astype(float)
+            * 32.0
+        )
+
+
+        # 题名命中权重最高
+        score += must_title * 18.0
+
+        score += must_keywords * 10.0
+
+        score += must_conclusion * 6.0
+
+        score += must_abstract * 3.0
+
+
+        # 目标性质/机理加分
+        boost_count = (
+            _series_count(title, rule["boost"])
+            * 5.0
+            +
+            _series_count(keywords, rule["boost"])
+            * 3.0
+            +
+            _series_count(abstract, rule["boost"])
+            * 1.0
+        )
+
+        score += boost_count
+
+
+        # ==================================
+        # “强直接证据”
+        # ==================================
+
+        if "kdp" in q_lower and "dkdp" not in q_lower:
+
+            strong_direct = (
+                direct_mask
+                & kdp_hit
+            )
+
+        else:
+
+            strong_direct = direct_mask
+
+
+        score += (
+            strong_direct.astype(float)
+            * 25.0
+        )
+
+
+        evidence_level.loc[
+            direct_mask
+        ] = "直接主题证据"
+
+        evidence_level.loc[
+            strong_direct
+        ] = "强直接证据"
+
+
+        # ==================================
+        # 质量门
+        # ==================================
+
+        strong_n = int(
+            strong_direct.sum()
+        )
+
+        direct_n = int(
+            direct_mask.sum()
+        )
+
+
+        # 有足够强直接证据时，
+        # 禁止泛背景论文占据前排
+        if strong_n >= 3:
+
+            candidate_mask = (
+                strong_direct
+                | direct_mask
+            )
+
+        # 强证据少，但主题直接文献至少3篇
+        elif direct_n >= 3:
+
+            candidate_mask = direct_mask
+
+        # 文献库确实很少时才允许背景论文补充
+        else:
+
+            candidate_mask = (
+                score > 0
+            )
+
+    else:
+
+        candidate_mask = (
+            score > 0
+        )
+
+
+    # ---------- 最终结果 ----------
+    out = work.copy()
+
+    out["_检索得分"] = score
+
+    out["_证据层级"] = evidence_level
+
+
+    out = out[
+        candidate_mask
+    ].copy()
+
+
+    if out.empty:
+
+        out = work.copy()
+
+        out["_检索得分"] = score
+
+        out["_证据层级"] = (
+            "背景/间接证据"
+        )
+
+
+    evidence_rank = {
+        "强直接证据": 3,
+        "直接主题证据": 2,
+        "背景/间接证据": 1
+    }
+
+    out["_证据排序"] = (
+        out["_证据层级"]
+        .map(evidence_rank)
+        .fillna(0)
+    )
+
+
+    out = out.sort_values(
+        [
+            "_证据排序",
+            "_检索得分",
+            "V5科研优先分",
+            "被引次数"
+        ],
+        ascending=[
+            False,
+            False,
+            False,
+            False
+        ]
+    )
+
+
+    return (
+        out.head(top_k)
+        .drop(
+            columns=[
+                "_证据排序"
+            ]
+        )
+    )def topic_search(df,topic,top_k=100,scope="相关池"):return search_papers(df," ".join(TOPICS.get(topic,[topic])),top_k,scope)
 def topic_stats(df):
     r=df[df["V5相关池"]=="KDP/DKDP相关池"];maxy=int(r["年份"].max()) if len(r) else 2026;rows=[]
     for t in TOPICS:
