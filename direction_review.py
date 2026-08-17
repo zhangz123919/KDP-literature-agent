@@ -58,20 +58,38 @@ def _build_evidence_pack(
     max_total: int = 55,
 ) -> pd.DataFrame:
     """
-    全库先按15个专题扫描，再为每个专题选代表文献。
-    不是让大模型假装“读完5928篇”，而是：
-    全库统计 + 分主题代表证据 + 重点问题定向补充。
+    快速代表证据包：
+    - 不再对15个专题逐一调用完整 search_papers（旧版最主要卡顿来源）
+    - 直接利用预处理后的 _text 做专题真实命中
+    - 每个专题在命中文献中按科研优先分/被引/年份选代表文献
+    - 只有用户自定义重点问题再调用一次 search_papers
     """
-    pieces = []
+    rel = df[df["V5相关池"] == "KDP/DKDP相关池"].copy()
+    if rel.empty:
+        return df.head(0).copy()
 
-    for topic in TOPICS:
-        d = topic_search(df, topic, per_topic, "相关池").copy()
+    pieces = []
+    text_series = rel["_text"].fillna("").astype(str)
+
+    for topic, terms in TOPICS.items():
+        terms = [str(t).strip() for t in terms if str(t).strip()]
+        if not terms:
+            continue
+
+        pattern = "|".join(re.escape(t) for t in terms)
+        hit = text_series.str.contains(pattern, case=False, regex=True, na=False)
+        d = rel.loc[hit].copy()
+
         if len(d):
+            d = d.sort_values(
+                ["V5科研优先分", "被引次数", "年份"],
+                ascending=False,
+            ).head(per_topic)
             d["_方向专题"] = topic
             pieces.append(d)
 
     if str(focus or "").strip():
-        targeted = search_papers(df, focus, 18, "相关池").copy()
+        targeted = search_papers(df, focus, 14, "相关池").copy()
         if len(targeted):
             targeted["_方向专题"] = "用户重点问题"
             pieces.append(targeted)
@@ -81,10 +99,12 @@ def _build_evidence_pack(
 
     pack = pd.concat(pieces, axis=0)
 
-    # DOI优先去重；没有DOI时以题名去重
     dedupe_key = (
         pack["DOI"].fillna("").astype(str).str.strip()
-        .where(pack["DOI"].fillna("").astype(str).str.strip() != "", pack["题名"].astype(str))
+        .where(
+            pack["DOI"].fillna("").astype(str).str.strip() != "",
+            pack["题名"].astype(str),
+        )
     )
     pack = pack.assign(_dedupe_key=dedupe_key).drop_duplicates("_dedupe_key")
 
@@ -94,7 +114,6 @@ def _build_evidence_pack(
     ).head(max_total)
 
     return pack.drop(columns=["_dedupe_key"], errors="ignore")
-
 
 def _topic_snapshot(df: pd.DataFrame) -> pd.DataFrame:
     stats = topic_stats(df).copy()
@@ -241,6 +260,7 @@ def stream_direction_report(
     constraints: str,
     horizon: str,
     theory_weight: str,
+    quick: bool = False,
 ):
     enforce_ai_quota()
 
@@ -250,8 +270,13 @@ def stream_direction_report(
     yield {"type": "stage", "text": "正在扫描全部 KDP/DKDP 相关文献的专题结构…"}
 
     stats = _topic_snapshot(df)
-    pack = _build_evidence_pack(df, focus, per_topic=5, max_total=55)
-    local_context, local_sources = _evidence_context(pack, maxp=48)
+
+    if quick:
+        pack = _build_evidence_pack(df, focus, per_topic=2, max_total=30)
+        local_context, local_sources = _evidence_context(pack, maxp=24)
+    else:
+        pack = _build_evidence_pack(df, focus, per_topic=5, max_total=55)
+        local_context, local_sources = _evidence_context(pack, maxp=48)
 
     yield {
         "type": "stage",
@@ -273,7 +298,16 @@ def stream_direction_report(
         ),
     }
 
+    quick_instruction = (
+        "【快速测试模式】请保留完整12部分结构，但每部分压缩表达；"
+        "候选课题给3个、优先论文给10篇，重点验证检索、证据引用、方向判断和流式输出是否正常。"
+        if quick else
+        "【正式报告模式】请充分展开分析，形成可用于与导师讨论和后续选题的完整方向决策报告。"
+    )
+
     prompt = f"""
+{quick_instruction}
+
 请生成一份可以直接用于“本人 + 导师共同确定研究课题”的
 《KDP/DKDP晶体缺陷、开裂与损伤研究方向决策型文献调研报告》。
 
@@ -453,7 +487,8 @@ def stream_direction_report(
 
     max_tokens = _secret("AI_MAX_OUTPUT_TOKENS", 12000)
     try:
-        kwargs["max_tokens"] = int(max_tokens)
+        max_tokens = int(max_tokens)
+        kwargs["max_tokens"] = min(max_tokens, 4200) if quick else max_tokens
     except Exception:
         pass
 
@@ -537,11 +572,19 @@ def direction_review_page():
         ]
     )
 
-    tab1, tab2, tab3 = st.tabs(
-        ["领域全景", "代表证据与候选方向", "生成完整方向决策报告"]
+    section = st.segmented_control(
+        "方向决策工作区",
+        ["领域全景", "代表证据与候选方向", "生成完整方向决策报告"],
+        default="领域全景",
+        selection_mode="single",
+        label_visibility="collapsed",
+        key="direction_workspace",
     )
 
-    with tab1:
+    # 重要：旧版使用 st.tabs，Streamlit 会把三个页签内容全部执行。
+    # 即使用户只打开“生成报告”，后台仍会绘图并对15个专题逐一检索，
+    # 因此页面会长时间变灰。现在只运行当前选中的一个工作区。
+    if section == "领域全景":
         left, right = st.columns([1.1, 1], gap="large")
 
         with left:
@@ -570,20 +613,22 @@ def direction_review_page():
             height=470,
             hide_index=True,
         )
+        return
 
-    with tab2:
+    if section == "代表证据与候选方向":
         focus_preview = st.text_input(
             "先输入你最关心的问题（可选）",
             placeholder="例如：KDP生长/降温过程开裂；氢空位与吸收；包裹体作为裂纹萌生源",
             key="direction_preview_focus",
         )
 
-        pack = _build_evidence_pack(
-            df,
-            focus_preview,
-            per_topic=4,
-            max_total=45,
-        )
+        with st.spinner("正在构建跨专题代表证据包…"):
+            pack = _build_evidence_pack(
+                df,
+                focus_preview,
+                per_topic=4,
+                max_total=45,
+            )
 
         section_title(
             "跨专题代表证据包",
@@ -620,131 +665,148 @@ def direction_review_page():
             "这里展示的是“用于做方向判断的代表证据”，完整5928篇相关文献仍保留在文献中心。"
             "最终方向决策报告会同时使用全库统计、代表证据和外部最新资料。"
         )
+        return
 
-    with tab3:
-        with st.container(border=True):
-            focus = st.text_area(
-                "希望重点解决的问题",
-                height=100,
-                placeholder=(
-                    "可以留空让系统从全景中判断。也可以写："
-                    "希望围绕KDP/DKDP水溶液生长后的开裂问题，重点关注降温、籽晶、包裹体、位错和理论计算。"
-                ),
-            )
-
-            c1, c2 = st.columns(2)
-
-            horizon = c1.selectbox(
-                "希望形成的研究周期",
-                ["6个月可形成阶段成果", "12个月形成系统研究", "18个月以上长期课题"],
-                index=1,
-            )
-
-            theory_weight = c2.selectbox(
-                "理论计算权重",
-                ["较低：实验为主", "中等：实验 + DFT/FEA协同", "较高：适当提高理论计算权重"],
-                index=2,
-            )
-
-            constraints = st.text_area(
-                "现实约束 / 已有条件",
-                height=100,
-                placeholder=(
-                    "例如：当前实验数据有限；希望课题能先从文献+计算启动；"
-                    "后续可开展晶体生长、Raman/XRD/显微、DFT或有限元等。"
-                ),
-            )
-
-        soft_note(
-            f"当前会话剩余AI调用次数：{remaining_ai_calls()}。"
-            "完整方向报告会比普通问答更长，建议把真正想与导师讨论的约束一次写清楚。"
-        )
-
-        if not st.button(
-            "生成《KDP/DKDP研究方向决策型文献调研报告》",
-            type="primary",
-        ):
-            return
-
-        status = st.status(
-            "正在启动全景文献调研…",
-            expanded=True,
-        )
-
-        answer = ""
-        answer_box = st.empty()
-        local_sources = []
-        evidence_pack = None
-        report_stats = None
-        model = ""
-
-        try:
-            for event in stream_direction_report(
-                df,
-                focus,
-                constraints,
-                horizon,
-                theory_weight,
-            ):
-                tp = event.get("type")
-
-                if tp == "stage":
-                    status.write(event.get("text", ""))
-
-                elif tp == "reasoning":
-                    status.update(
-                        label="正在比较研究方向、研究空白与可执行性…",
-                        state="running",
-                    )
-
-                elif tp == "content":
-                    answer += event.get("text", "")
-                    answer_box.markdown(answer + "\n\n▌")
-
-                elif tp == "done":
-                    local_sources = event.get("local_sources", [])
-                    evidence_pack = event.get("evidence_pack")
-                    report_stats = event.get("stats")
-                    model = event.get("model", "")
-                    status.update(
-                        label=f"方向决策报告完成 · {model}",
-                        state="complete",
-                        expanded=False,
-                    )
-
-            answer_box.markdown(answer)
-
-        except PermissionError as exc:
-            status.update(label="当前无法调用AI", state="error")
-            st.warning(str(exc))
-            return
-
-        except Exception as exc:
-            status.update(label="报告生成失败", state="error")
-            safe_error(
-                "报告生成过程中出现异常，详细错误已记录。请稍后重试。",
-                exc,
-            )
-            return
-
-        section_title(
-            "报告使用建议",
-            "建议先由本人标记“同意/不同意/待核实”，再与导师共同确定最终课题，而不是把AI推荐直接当成结论。",
-        )
-
-        st.download_button(
-            "导出完整方向决策报告 Word",
-            docx_bytes(
-                "KDP_DKDP_研究方向决策型文献调研报告",
-                answer,
-                local_sources,
+    # 只在真正进入“生成报告”工作区时运行这一段。
+    with st.container(border=True):
+        focus = st.text_area(
+            "希望重点解决的问题",
+            height=100,
+            placeholder=(
+                "可以留空让系统从全景中判断。也可以写："
+                "希望围绕KDP/DKDP水溶液生长后的开裂问题，重点关注降温、籽晶、包裹体、位错和理论计算。"
             ),
-            "KDP_DKDP_研究方向决策型文献调研报告.docx",
         )
 
-        if evidence_pack is not None and len(evidence_pack):
-            st.download_button(
-                "导出本次证据包 Excel",
-                excel_bytes(evidence_pack, "方向决策证据包"),
-                "KDP_DKDP_方向决策证据包.xlsx",
-            )
+        c1, c2 = st.columns(2)
+
+        horizon = c1.selectbox(
+            "希望形成的研究周期",
+            ["6个月可形成阶段成果", "12个月形成系统研究", "18个月以上长期课题"],
+            index=1,
+        )
+
+        theory_weight = c2.selectbox(
+            "理论计算权重",
+            ["较低：实验为主", "中等：实验 + DFT/FEA协同", "较高：适当提高理论计算权重"],
+            index=2,
+        )
+
+        constraints = st.text_area(
+            "现实约束 / 已有条件",
+            height=100,
+            placeholder=(
+                "例如：当前实验数据有限；希望课题能先从文献+计算启动；"
+                "后续可开展晶体生长、Raman/XRD/显微、DFT或有限元等。"
+            ),
+        )
+
+        run_mode = st.radio(
+            "运行模式",
+            ["快速测试", "正式报告"],
+            horizontal=True,
+            index=0,
+            help="第一次建议先用快速测试验证整条链路；确认正常后再生成正式长报告。",
+        )
+
+    soft_note(
+        f"当前会话剩余AI调用次数：{remaining_ai_calls()}。"
+        + (
+            " 快速测试会减少代表证据数量并压缩输出，用于验证功能是否正常。"
+            if run_mode == "快速测试"
+            else " 正式方向报告会比普通问答更长，请把真正想与导师讨论的约束一次写清楚。"
+        )
+    )
+
+    button_label = (
+        "快速测试：生成精简方向决策报告"
+        if run_mode == "快速测试"
+        else "生成《KDP/DKDP研究方向决策型文献调研报告》"
+    )
+
+    if not st.button(button_label, type="primary"):
+        return
+
+    status = st.status(
+        "正在启动全景文献调研…",
+        expanded=True,
+    )
+
+    answer = ""
+    answer_box = st.empty()
+    local_sources = []
+    evidence_pack = None
+    report_stats = None
+    model = ""
+
+    try:
+        for event in stream_direction_report(
+            df,
+            focus,
+            constraints,
+            horizon,
+            theory_weight,
+            quick=(run_mode == "快速测试"),
+        ):
+            tp = event.get("type")
+
+            if tp == "stage":
+                status.write(event.get("text", ""))
+
+            elif tp == "reasoning":
+                status.update(
+                    label="正在比较研究方向、研究空白与可执行性…",
+                    state="running",
+                )
+
+            elif tp == "content":
+                answer += event.get("text", "")
+                answer_box.markdown(answer + "\n\n▌")
+
+            elif tp == "done":
+                local_sources = event.get("local_sources", [])
+                evidence_pack = event.get("evidence_pack")
+                report_stats = event.get("stats")
+                model = event.get("model", "")
+                status.update(
+                    label=f"方向决策报告完成 · {model}",
+                    state="complete",
+                    expanded=False,
+                )
+
+        answer_box.markdown(answer)
+
+    except PermissionError as exc:
+        status.update(label="当前无法调用AI", state="error")
+        st.warning(str(exc))
+        return
+
+    except Exception as exc:
+        status.update(label="报告生成失败", state="error")
+        safe_error(
+            "报告生成过程中出现异常，详细错误已记录。请稍后重试。",
+            exc,
+        )
+        return
+
+    section_title(
+        "报告使用建议",
+        "建议先由本人标记“同意/不同意/待核实”，再与导师共同确定最终课题，而不是把AI推荐直接当成结论。",
+    )
+
+    st.download_button(
+        "导出方向决策报告 Word",
+        docx_bytes(
+            "KDP_DKDP_研究方向决策型文献调研报告",
+            answer,
+            local_sources,
+        ),
+        "KDP_DKDP_研究方向决策型文献调研报告.docx",
+    )
+
+    if evidence_pack is not None and len(evidence_pack):
+        st.download_button(
+            "导出本次证据包 Excel",
+            excel_bytes(evidence_pack, "方向决策证据包"),
+            "KDP_DKDP_方向决策证据包.xlsx",
+        )
