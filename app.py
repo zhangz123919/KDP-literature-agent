@@ -29,9 +29,14 @@ with st.sidebar:
         "🕳️ 研究空白","🤖 AI科研智能体","📝 报告中心","🩺 数据审计"
     ], label_visibility="collapsed")
     ok, model = api_status()
-    st.divider()
-    st.success(f"AI已连接：{model}") if ok else st.warning("AI未连接：离线功能仍可用")
-    st.caption("S/A/B只是优先级，不会删除文献。")
+st.divider()
+
+if ok:
+    st.success(f"AI已连接：{model}")
+else:
+    st.warning("AI未连接：离线功能仍可用")
+
+st.caption("S/A/B只是优先级，不会删除文献。")
 
 def sources_block(src):
     if src:
