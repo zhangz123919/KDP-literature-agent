@@ -1,2 +1,7 @@
-# KDP-literature-agent
-KDP/DKDP crystal defect and laser damage literature research platform
+# KDP/DKDP科研智能体 V5 基本定型版
+
+保留 GitHub 中现有 `data/KDP_全自动详细文献调研.xlsx`。
+
+模块：科研驾驶舱、文献中心、知识图谱、专题调研、多文献比较、开裂诊断、对照实验、理论计算、研究空白、AI智能体、报告中心、数据审计。
+
+S/A/B只是阅读优先级，不删除文献。
