@@ -13,7 +13,8 @@ from openai import OpenAI
 
 from engine import CORE_TOPICS, TOPICS, load_data, material_scope, search_papers, topic_search, topic_stats
 from reports import docx_bytes, excel_bytes
-from security import enforce_ai_quota, remaining_ai_calls, safe_error, validate_user_text
+from research_memory import add_item, build_project_context, get_active_project, project_context_strip
+from security import enforce_ai_quota, guard_duplicate_ai_request, remaining_ai_calls, safe_error, validate_user_text
 from ui import COLORS, insight_strip, metric_cards, page_header, plotly, section_title, soft_note
 from usage_monitor import record_deepseek_usage, render_deepseek_usage
 from web_research import research_web, source_links_markdown
@@ -376,6 +377,11 @@ def stream_direction_report(
 
     focus = validate_user_text(focus, "重点问题")
     constraints = validate_user_text(constraints, "现实约束")
+    project_context = build_project_context(for_external_ai=True)
+    guard_duplicate_ai_request(
+        f"direction|{focus}|{constraints}|{horizon}|{theory_weight}|{quick}",
+        window_seconds=45,
+    )
 
     yield {"type": "stage", "text": "正在扫描 KDP 主研究文献的专题结构…"}
 
@@ -426,6 +432,9 @@ def stream_direction_report(
 
 【现实约束】
 {constraints or "暂无额外约束，请按硕博阶段个人科研可执行性进行判断"}
+
+【当前研究项目记忆】
+{project_context if project_context else "当前没有额外项目记忆。"}
 
 【希望覆盖的研究周期】
 {horizon}
@@ -612,18 +621,22 @@ def stream_direction_report(
     if thinking_enabled:
         kwargs["reasoning_effort"] = "high"
 
-    max_tokens = _secret("AI_MAX_OUTPUT_TOKENS", 10000)
-    try:
-        max_tokens = int(max_tokens)
-        # 快速测试只验证方向判断与证据链，不生成超长正文
-        kwargs["max_tokens"] = min(max_tokens, 2600) if quick else max_tokens
-    except Exception:
-        kwargs["max_tokens"] = 2600 if quick else 10000
+    if quick:
+        kwargs["max_tokens"] = 2600
+    else:
+        # 正式方向报告单独使用更高上限，避免深度思考占用大量completion后正文被截断。
+        # 可在Secrets中用 DIRECTION_REPORT_MAX_TOKENS 覆盖。
+        formal_max = _secret("DIRECTION_REPORT_MAX_TOKENS", 24000)
+        try:
+            kwargs["max_tokens"] = min(max(int(formal_max), 12000), 32000)
+        except Exception:
+            kwargs["max_tokens"] = 24000
 
     response = client.chat.completions.create(**kwargs)
 
     reasoning_seen = False
     final_usage = None
+    final_finish_reason = None
 
     for chunk in response:
         # include_usage=True 时，最后一个chunk通常没有choices但带usage
@@ -634,7 +647,11 @@ def stream_direction_report(
         if not getattr(chunk, "choices", None):
             continue
 
-        delta = chunk.choices[0].delta
+        choice = chunk.choices[0]
+        if getattr(choice, "finish_reason", None):
+            final_finish_reason = choice.finish_reason
+
+        delta = choice.delta
         reasoning = getattr(delta, "reasoning_content", None)
         content = getattr(delta, "content", None)
 
@@ -661,6 +678,8 @@ def stream_direction_report(
         "stats": stats,
         "model": model,
         "usage": usage_summary,
+        "finish_reason": final_finish_reason,
+        "truncated": final_finish_reason == "length",
     }
 
 
@@ -675,6 +694,8 @@ def direction_review_page():
         "不是只找几篇论文，而是扫描KDP主研究文献池，形成领域版图、科学问题、研究空白、候选课题和6–12个月研究路线。",
         "RESEARCH DIRECTION REVIEW",
     )
+
+    project_context_strip()
 
     rel = material_scope(df, "KDP主线")
     stats = _topic_snapshot(df)
@@ -830,15 +851,17 @@ def direction_review_page():
         )
 
         soft_note(
-            "这里展示的是“用于做方向判断的代表证据”，完整5928篇相关文献仍保留在文献中心。"
+            "这里展示的是“用于做方向判断的代表证据”，完整KDP主研究文献仍保留在文献中心。"
             "最终方向决策报告会同时使用全库统计、代表证据和外部最新资料。"
         )
         return
 
     # 只在真正进入“生成报告”工作区时运行这一段。
     with st.container(border=True):
+        active_project = get_active_project()
         focus = st.text_area(
             "希望重点解决的问题",
+            value=active_project.get("question", ""),
             height=100,
             placeholder=(
                 "可以留空让系统从全景中判断。也可以写："
@@ -907,6 +930,8 @@ def direction_review_page():
     report_stats = None
     model = ""
     api_usage = {}
+    report_truncated = False
+    finish_reason = None
 
     try:
         for event in stream_direction_report(
@@ -938,16 +963,34 @@ def direction_review_page():
                 report_stats = event.get("stats")
                 model = event.get("model", "")
                 api_usage = event.get("usage") or {}
+                finish_reason = event.get("finish_reason")
+                report_truncated = bool(event.get("truncated"))
+
                 cost_text = ""
                 if api_usage:
                     cost_text = f" · 估算 ¥{api_usage.get('estimated_cny', 0):.4f}"
-                status.update(
-                    label=f"方向决策报告完成 · {model}{cost_text}",
-                    state="complete",
-                    expanded=False,
-                )
+
+                if report_truncated:
+                    status.update(
+                        label=f"报告达到输出上限 · {model}{cost_text}",
+                        state="error",
+                        expanded=True,
+                    )
+                else:
+                    status.update(
+                        label=f"方向决策报告完成 · {model}{cost_text}",
+                        state="complete",
+                        expanded=False,
+                    )
 
         answer_box.markdown(answer)
+
+        if report_truncated:
+            st.error(
+                "本次正式报告触发了模型输出长度上限，当前内容不能视为完整报告。"
+                "请不要直接拿截断版本做最终选题依据；可提高 DIRECTION_REPORT_MAX_TOKENS "
+                "或将报告分章节生成。"
+            )
 
     except PermissionError as exc:
         status.update(label="当前无法调用AI", state="error")
@@ -986,3 +1029,23 @@ def direction_review_page():
             excel_bytes(evidence_pack, "方向决策证据包"),
             "KDP_方向决策证据包.xlsx",
         )
+
+
+    if answer and not report_truncated:
+        if st.button("保存本次方向报告到当前研究项目"):
+            add_item(
+                "direction_decision",
+                "研究方向决策报告",
+                answer[:1800],
+                {
+                    "focus": focus,
+                    "constraints": constraints,
+                    "horizon": horizon,
+                    "theory_weight": theory_weight,
+                    "model": model,
+                    "full_report": answer,
+                },
+                "研究方向决策",
+                "待导师审核",
+            )
+            st.success("已保存到研究项目工作区，后续AI、实验设计和计算任务可以读取这次方向决策。")

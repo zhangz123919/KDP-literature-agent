@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import hmac
 import time
 import traceback
@@ -113,6 +114,31 @@ def enforce_ai_quota():
 
     st.session_state["_kdp_ai_calls_used"] = used + 1
     st.session_state["_kdp_ai_last_call"] = now
+
+
+
+def guard_duplicate_ai_request(payload: str, window_seconds: int = 30):
+    """
+    拦截短时间内完全相同的模型请求，降低重复点击/重复提交造成的API浪费。
+    只作用于当前浏览会话，不保存用户内容到外部。
+    """
+    payload = str(payload or "")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    now = time.time()
+    last_digest = st.session_state.get("_kdp_last_ai_digest", "")
+    last_time = float(st.session_state.get("_kdp_last_ai_digest_time", 0.0))
+
+    if digest == last_digest and now - last_time < window_seconds:
+        wait = max(1, int(window_seconds - (now - last_time)))
+        raise PermissionError(
+            f"检测到与刚才完全相同的请求。为避免重复扣费，请约 {wait} 秒后再试，"
+            "或修改问题/参数后重新提交。"
+        )
+
+    st.session_state["_kdp_last_ai_digest"] = digest
+    st.session_state["_kdp_last_ai_digest_time"] = now
+
 
 
 def remaining_ai_calls() -> int:

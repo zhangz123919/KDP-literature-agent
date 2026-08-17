@@ -16,6 +16,14 @@ from engine import CORE_TOPICS, TOPICS, load_data, material_scope, offline_summa
 from reports import docx_bytes, excel_bytes
 from security import safe_error
 from usage_monitor import render_deepseek_usage
+from research_memory import (
+    add_item,
+    build_project_context,
+    get_active_project,
+    list_items,
+    private_mode_enabled,
+    project_context_strip,
+)
 from ui import (
     COLORS,
     evidence_table,
@@ -54,6 +62,8 @@ def dashboard():
         "把文献、缺陷机制、实验变量与计算路线压缩到同一个研究视野中。",
         "RESEARCH COMMAND CENTER",
     )
+
+    project_context_strip()
 
     related = material_scope(df, "KDP主线")
     rel = len(related)
@@ -302,6 +312,8 @@ def literature():
         "LITERATURE INTELLIGENCE",
     )
 
+    project_context_strip()
+
     with st.container(border=True):
         c1, c2, c3 = st.columns([1, 1, 1.15])
         scope = c1.selectbox("证据范围", ["KDP主线", "S+A", "相关扩展", "全库"], index=0)
@@ -332,7 +344,7 @@ def literature():
 
     cols = [
         "题名", "作者", "年份", "期刊", "_证据层级", "V5推荐等级",
-        "核心证据层级", "证据完整度状态", "证据完整度分", "V5科研优先分",
+        "核心证据层级", "证据使用等级", "证据完整度状态", "证据完整度分", "V5科研优先分",
         "缺陷/应力来源", "作用机制", "宏观结果", "_方法标签", "被引次数", "DOI",
     ]
     cols = [c for c in cols if c in result.columns]
@@ -357,6 +369,46 @@ def literature():
         excel_bytes(result[cols], "文献检索"),
         "KDP_文献检索.xlsx",
     )
+
+
+    if len(result):
+        with st.expander("项目协同：把文献加入当前研究项目", expanded=False):
+            top_for_project = result.head(120)
+            mapping = {
+                f"{r['题名']}｜{r.get('年份','')}｜{r.get('证据使用等级','')}": i
+                for i, r in top_for_project.iterrows()
+            }
+            selected_papers = st.multiselect(
+                "选择要沉淀的项目证据",
+                list(mapping),
+                max_selections=12,
+                key="literature_project_evidence",
+            )
+            role = st.selectbox(
+                "在当前项目中的作用",
+                ["直接支持", "间接支持", "基础支撑", "反对/冲突证据", "待核验"],
+            )
+            if st.button("加入当前项目证据"):
+                for label in selected_papers:
+                    r = result.loc[mapping[label]]
+                    add_item(
+                        "evidence",
+                        str(r.get("题名", "")),
+                        str(r.get("自动主要结论", ""))[:1000],
+                        {
+                            "doi": str(r.get("DOI", "")),
+                            "year": str(r.get("年份", "")),
+                            "journal": str(r.get("期刊", "")),
+                            "evidence_role": role,
+                            "evidence_grade": str(r.get("证据使用等级", "")),
+                            "mechanism": str(r.get("作用机制", "")),
+                            "outcome": str(r.get("宏观结果", "")),
+                        },
+                        "文献中心",
+                        role,
+                    )
+                if selected_papers:
+                    st.success(f"已将 {len(selected_papers)} 篇文献加入当前项目记忆。")
 
 
 # ---- Knowledge graph -------------------------------------------------------
@@ -755,6 +807,7 @@ def knowledge_graph():
         "把数千篇文献压缩成可旋转、可追踪的“来源—机制—后果”研究网络，而不是堆叠默认图表。",
         "KNOWLEDGE GRAPH",
     )
+    project_context_strip()
 
     with st.container(border=True):
         c1, c2, c3 = st.columns([1, 1.05, 1.1])
@@ -911,12 +964,14 @@ def topic_review():
         "TOPIC RESEARCH",
     )
 
+    project_context_strip()
+
     with st.container(border=True):
         c1, c2 = st.columns([1.25, 1])
-        topic = c1.selectbox("研究专题", list(TOPICS))
+        topic = c1.selectbox("研究专题", list(CORE_TOPICS))
         n = c2.slider("代表文献数", 8, 40, 20)
 
-    papers = topic_search(df, topic, n, "相关池")
+    papers = topic_search(df, topic, n, "KDP主线")
 
     metric_cards(
         [
@@ -962,6 +1017,16 @@ def topic_review():
             docx_bytes(topic + "专题调研", answer, sources),
             topic + "_专题调研.docx",
         )
+        if st.button("保存专题调研到当前研究项目"):
+            add_item(
+                "ai_note",
+                "专题调研：" + topic,
+                answer[:1600],
+                {"topic": topic, "full_answer": answer},
+                "专题调研",
+                "待核验",
+            )
+            st.success("已保存到当前项目记忆。")
 
 
 def compare():
@@ -971,6 +1036,8 @@ def compare():
         "把多篇论文放在同一证据坐标系里比较对象、方法、结论、差异与可复现价值。",
         "PAPER COMPARISON",
     )
+
+    project_context_strip()
 
     with st.container(border=True):
         q = st.text_input("检索候选论文", placeholder="输入关键词后缩小候选集")
@@ -1009,6 +1076,16 @@ def compare():
                 st.markdown(answer)
             sources_block(sources)
             render_deepseek_usage()
+            if st.button("保存多文献比较到当前研究项目"):
+                add_item(
+                    "ai_note",
+                    "多文献比较：" + " / ".join([str(x)[:35] for x in selected[:3]]),
+                    answer[:1600],
+                    {"selected": selected, "full_answer": answer},
+                    "多文献比较",
+                    "待核验",
+                )
+                st.success("已保存到当前项目记忆。")
         except Exception as exc:
             safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
@@ -1017,14 +1094,16 @@ def crack_diagnosis():
     df = _df()
     page_header(
         "开裂诊断",
-        "将实验现象、工艺变量和文献证据放在同一诊断链中，优先找最可能的根因与最小验证实验。",
+        "先做透明的工艺先验排序，再用KDP文献证据约束判断；输出可证伪的最小验证实验，而不是让AI直接猜原因。",
         "CRACK DIAGNOSTICS",
     )
+
+    project_context_strip()
 
     phenomenon = st.text_area(
         "开裂 / 缺陷现象",
         height=110,
-        placeholder="例如：取晶后约 30 min 出现纵向裂纹，裂纹从籽晶附近开始扩展……",
+        placeholder="例如：取晶后约30 min出现纵向裂纹，裂纹从籽晶附近开始扩展；请尽量写时间、位置、方向和发生阶段。",
     )
 
     options = [
@@ -1034,78 +1113,250 @@ def crack_diagnosis():
 
     states = {}
     with st.container(border=True):
-        section_title("实验变量快照", "不要求一次填全；未知项可保留为“未知”")
+        section_title("实验变量快照", "未知项可以保留；系统会把“未知”视为待核，不会自动判为高风险")
         cols = st.columns(2)
         for i, variable in enumerate(VARIABLES):
-            states[variable] = cols[i % 2].selectbox(variable, options, key="diag_" + variable)
+            states[variable] = cols[i % 2].selectbox(
+                variable,
+                options,
+                key="diag_" + variable,
+            )
 
     if not st.button("执行根因诊断", type="primary"):
+        soft_note("诊断结果是“风险排序 + 文献支持 + 可证伪实验”，不能替代真实实验因果证明。")
         return
 
     result = diagnose(states)
+
+    # 为风险最高的变量绑定独立本地文献证据。
+    support_rows = []
+    top_variables = result[result["风险分"] > 0].head(5)
+
+    for _, row in top_variables.iterrows():
+        q = (
+            f"{phenomenon} {row['变量']} {row['检索关键词']} "
+            "mechanism evidence"
+        )
+        papers = search_papers(df, q, 12, "KDP主线")
+
+        if "证据使用等级" in papers.columns:
+            strong = int(
+                papers["证据使用等级"]
+                .isin(["A 可用于重点论证", "B 可用于辅助论证"])
+                .sum()
+            )
+        else:
+            strong = 0
+
+        direct = int(
+            papers.get(
+                "证据角色",
+                pd.Series("", index=papers.index),
+            )
+            .isin(["直接核心证据", "基础支撑证据"])
+            .sum()
+        )
+
+        if strong >= 4:
+            evidence_strength = "较强"
+        elif strong >= 2:
+            evidence_strength = "中等"
+        elif len(papers) > 0:
+            evidence_strength = "有限"
+        else:
+            evidence_strength = "当前未检出"
+
+        support_rows.append(
+            {
+                "变量": row["变量"],
+                "工艺先验风险": row["风险"],
+                "检索到文献": len(papers),
+                "A/B级证据": strong,
+                "直接/支撑证据": direct,
+                "文献支持": evidence_strength,
+                "否证判据": row["否证判据"],
+            }
+        )
+
+    support = pd.DataFrame(support_rows)
+
+    metric_cards(
+        [
+            {
+                "label": "高风险变量",
+                "value": int((result["风险"] == "高").sum()),
+                "note": "仅代表工艺先验",
+                "accent": COLORS["red"],
+            },
+            {
+                "label": "已绑定证据变量",
+                "value": len(support),
+                "note": "优先级最高的变量",
+                "accent": COLORS["primary"],
+            },
+            {
+                "label": "较强文献支持",
+                "value": int((support["文献支持"] == "较强").sum()) if len(support) else 0,
+                "note": "A/B级证据≥4",
+                "accent": COLORS["teal"],
+            },
+            {
+                "label": "诊断原则",
+                "value": "可证伪",
+                "note": "每个主因必须能被实验否证",
+                "accent": COLORS["orange"],
+            },
+        ]
+    )
+
     risk_map = {"高": 3, "中": 2, "低": 1, "待核": 0}
     plot_df = result.copy()
     plot_df["_风险值"] = plot_df["风险"].map(risk_map)
 
-    left, right = st.columns([1, 1.25], gap="large")
+    left, right = st.columns([.95, 1.35], gap="large")
+
     with left:
-        section_title("风险排序", "优先验证高风险变量")
+        section_title("工艺先验风险排序", "这是排查优先级，不是“已经证明的原因”")
         fig = px.bar(
             plot_df.sort_values("_风险值"),
             x="_风险值",
             y="变量",
             orientation="h",
             color="_风险值",
-            color_continuous_scale=["#CBD5E1", "#F4C56C", "#E66D72"],
+            color_continuous_scale=["#D9E2EA", "#E7B35C", "#C95C5C"],
         )
-        fig.update_layout(coloraxis_showscale=False, xaxis=dict(tickvals=[0,1,2,3], ticktext=["待核","低","中","高"]), xaxis_title="", yaxis_title="")
-        plotly(fig, height=510, key="diagnosis_risk")
+        fig.update_layout(
+            coloraxis_showscale=False,
+            xaxis=dict(
+                tickvals=[0, 1, 2, 3],
+                ticktext=["待核", "低", "中", "高"],
+            ),
+            xaxis_title="",
+            yaxis_title="",
+        )
+        plotly(fig, height=520, key="diagnosis_risk")
+
     with right:
-        section_title("诊断明细", "机制、最小对照实验与关键判据")
+        section_title("诊断明细", "每个判断都给出机制、最小实验、支持判据和否证判据")
+        cols = [
+            "变量", "当前状态", "风险", "可能机理",
+            "最小对照实验", "关键指标", "否证判据",
+        ]
         st.dataframe(
-            result[["变量", "当前状态", "风险", "可能机理", "最小对照实验", "关键指标"]],
+            result[cols],
             width="stretch",
-            height=510,
+            height=520,
             hide_index=True,
         )
 
+    section_title(
+        "风险判断与文献证据绑定",
+        "把“规则认为可疑”和“文献是否支持”分开显示，避免把经验规则包装成事实",
+    )
+
+    if len(support):
+        st.dataframe(
+            support,
+            width="stretch",
+            hide_index=True,
+            height=min(380, 68 + 42 * len(support)),
+        )
+    else:
+        soft_note("当前变量均为未知/待核。建议先补充实验条件，再做风险排序。")
+
     evidence = search_papers(
         df,
-        phenomenon + " crack thermal stress inclusion dislocation supersaturation",
-        15,
+        (
+            phenomenon
+            + " KDP crack thermal stress inclusion dislocation "
+              "supersaturation seed defect cooling"
+        ),
+        18,
         "KDP主线",
     )
-    section_title("关联文献证据", "诊断建议应与直接或间接文献证据对应")
-    evidence_table(evidence, height=400)
+
+    section_title(
+        "关联文献证据",
+        "优先显示证据完整度较高的KDP直接/支撑文献；低完整度文献只能作为线索",
+    )
+
+    evidence_cols = [
+        "题名", "年份", "期刊", "证据使用等级", "证据完整度分",
+        "证据角色", "缺陷/应力来源", "作用机制", "宏观结果", "DOI",
+    ]
+    evidence_cols = [c for c in evidence_cols if c in evidence.columns]
+    st.dataframe(
+        evidence[evidence_cols],
+        width="stretch",
+        hide_index=True,
+        height=430,
+    )
 
     ok, _ = api_status()
     if ok:
-        extra = "\n".join(
-            f"{x['变量']}={x['当前状态']}，风险={x['风险']}"
-            for _, x in result.iterrows()
-        )
+        extra_lines = [
+            "重要：下面风险来自工艺先验，不能直接写成因果结论。",
+        ]
+
+        for _, x in result.head(5).iterrows():
+            extra_lines.append(
+                f"{x['变量']}={x['当前状态']}，先验风险={x['风险']}，"
+                f"否证判据={x['否证判据']}"
+            )
+
+        if len(support):
+            extra_lines.append("文献绑定：" + support.to_string(index=False))
+
         try:
-            with st.status("DeepSeek 正在综合变量与证据…", expanded=False):
+            with st.status(
+                "DeepSeek 正在综合工艺先验、证据等级和可证伪实验…",
+                expanded=False,
+            ):
                 answer, sources = run_agent(
                     phenomenon or "诊断 KDP 晶体开裂原因",
                     evidence,
                     "实验诊断",
-                    extra,
+                    "\n".join(extra_lines),
                 )
+
             with st.container(border=True):
                 st.markdown(answer)
+
             sources_block(sources)
             render_deepseek_usage()
-        except Exception as exc:
-            safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
+        except Exception as exc:
+            safe_error(
+                "模型分析暂时不可用，详细错误已记录。请稍后重试。",
+                exc,
+            )
+
+    if st.button("保存本次诊断到当前研究项目"):
+        add_item(
+            "diagnosis",
+            (phenomenon[:70] if phenomenon else "KDP开裂诊断") + ("…" if len(phenomenon) > 70 else ""),
+            "；".join(
+                f"{r['变量']}={r['风险']}"
+                for _, r in result.head(5).iterrows()
+            ),
+            {
+                "phenomenon": phenomenon,
+                "risk_table": result.to_dict("records"),
+                "evidence_support": support.to_dict("records") if len(support) else [],
+            },
+            "开裂诊断",
+            "待实验验证",
+        )
+        st.success("已保存。对照实验设计、AI科研助手和研究项目工作区都可以读取这次诊断。")
 
 def experiment_design():
     page_header(
         "对照实验设计",
-        "把复杂开裂问题拆成单变量可验证矩阵，明确基线、实验组、关键指标与判据。",
+        "把复杂开裂问题拆成可证伪的单变量实验：基线、实验组、关键指标、支持判据、否证判据和记录要求一次给全。",
         "EXPERIMENT DESIGN",
     )
+
+    project_context_strip()
 
     with st.container(border=True):
         selected = st.multiselect(
@@ -1113,9 +1364,10 @@ def experiment_design():
             list(VARIABLES),
             default=["降温速率", "籽晶固定方式", "过饱和度"],
         )
+
         baseline = st.text_area(
             "当前标准流程 / 基线",
-            placeholder="填写你当前稳定使用的生长与冷却流程；不填则使用“当前标准流程”。",
+            placeholder="填写当前生长、取晶和冷却流程；越具体，后续越容易真正做到单变量。",
         )
 
     if not selected:
@@ -1123,32 +1375,104 @@ def experiment_design():
         return
 
     matrix = experiment_matrix(selected, baseline)
+
     metric_cards(
         [
-            {"label": "变量数", "value": len(selected), "note": "单变量对照", "accent": COLORS["primary"]},
-            {"label": "建议重复", "value": "≥ 3", "note": "每组独立样品 / 批次", "accent": COLORS["orange"]},
-            {"label": "设计原则", "value": "单变量", "note": "其余流程保持一致", "accent": COLORS["teal"]},
+            {
+                "label": "变量数",
+                "value": len(selected),
+                "note": "每次只改一个主变量",
+                "accent": COLORS["primary"],
+            },
+            {
+                "label": "探索重复",
+                "value": "≥ 3",
+                "note": "正式统计按方差/效应量追加",
+                "accent": COLORS["orange"],
+            },
+            {
+                "label": "核心原则",
+                "value": "可证伪",
+                "note": "不是只寻找支持证据",
+                "accent": COLORS["teal"],
+            },
+            {
+                "label": "记录方式",
+                "value": "时序化",
+                "note": "条件—现象—表征可追溯",
+                "accent": COLORS["cyan"],
+            },
         ]
     )
-    section_title("实验矩阵", "可以直接作为组会讨论或实验计划草案")
-    st.dataframe(matrix, width="stretch", height=480, hide_index=True)
+
+    section_title(
+        "实验矩阵",
+        "可以直接作为组会讨论和下一轮实验计划草案；“≥3”只是探索起点，不等于统计学充分",
+    )
+
+    st.dataframe(
+        matrix,
+        width="stretch",
+        height=540,
+        hide_index=True,
+    )
+
     st.download_button(
         "导出实验矩阵 Excel",
         excel_bytes(matrix, "对照实验"),
         "KDP_对照实验设计.xlsx",
     )
 
+    soft_note(
+        "正式得出因果结论前，应结合样本波动、效应量和重复性决定是否增加样本；"
+        "系统不把“每组3个”包装成通用统计学标准。"
+    )
+
+    if st.button("保存实验方案到当前研究项目"):
+        add_item(
+            "experiment_plan",
+            "对照实验方案：" + " / ".join(selected),
+            baseline or "基于当前标准流程的单变量对照方案",
+            {"variables": selected, "baseline": baseline, "matrix": matrix.to_dict("records")},
+            "对照实验设计",
+            "待执行",
+        )
+        st.success("已保存。执行后可到“实验研究库”记录真实结果。")
 
 def theory():
     df = _df()
     page_header(
-        "理论计算助手",
-        "把 DFT、MD、有限元的研究目标转成可执行的建模—收敛—输出—验证路线。",
-        "COMPUTATIONAL WORKBENCH",
+        "理论计算工作流",
+        "网页负责把科学问题、文献证据、建模步骤、收敛检查和结果解释串起来；真正的数值求解仍由QE/VASP/LAMMPS/COMSOL等外部软件完成。",
+        "COMPUTATIONAL RESEARCH WORKFLOW",
+    )
+    project_context_strip()
+
+    insight_strip(
+        [
+            {
+                "kicker": "PLATFORM ROLE",
+                "title": "研究流程与记忆",
+                "note": "定义问题、选模型、绑定文献、生成任务卡、保存结果",
+                "accent": COLORS["primary"],
+            },
+            {
+                "kicker": "SOLVER ROLE",
+                "title": "外部计算软件",
+                "note": "QE/VASP/LAMMPS/COMSOL等负责真正求解，不由网页假装完成",
+                "accent": COLORS["orange"],
+            },
+            {
+                "kicker": "AI ROLE",
+                "title": "解释与排错",
+                "note": "辅助参数依据、报错诊断、结果比较和下一步计算设计",
+                "accent": COLORS["teal"],
+            },
+        ]
     )
 
     with st.container(border=True):
-        c1, c2, c3 = st.columns([1, 1, 1.15])
+        c1, c2, c3 = st.columns([1, 1, 1.2])
         method = c1.selectbox("计算类型", ["DFT/第一性原理", "分子动力学 MD", "有限元 FEA"])
         target = c2.selectbox(
             "研究对象",
@@ -1158,58 +1482,169 @@ def theory():
                 "籽晶/固定约束", "同位素对照（扩展）",
             ],
         )
-        software = c3.multiselect(
-            "软件",
-            ["Materials Studio", "Quantum ESPRESSO", "VASP", "Gaussian", "LAMMPS", "COMSOL", "ANSYS", "Python"],
+        software_map = {
+            "DFT/第一性原理": ["Quantum ESPRESSO", "VASP", "Materials Studio (CASTEP)", "Gaussian（簇模型/局域模型）"],
+            "分子动力学 MD": ["LAMMPS", "Materials Studio (Forcite)", "Python后处理"],
+            "有限元 FEA": ["COMSOL", "ANSYS", "Python后处理"],
+        }
+        software = c3.selectbox("主要软件/求解器", software_map[method])
+        active_project = get_active_project()
+        goal = st.text_area(
+            "研究目标",
+            value="" if not active_project else active_project.get("question", ""),
+            placeholder="例如：比较不同氢空位位置与电荷态对缺陷态和光学响应的影响。",
         )
-        goal = st.text_area("研究目标", placeholder="例如：比较不同氢空位位置与电荷态对吸收边和缺陷态的影响。")
 
-    skeletons = {
+    if "Gaussian" in software and method == "DFT/第一性原理":
+        st.warning(
+            "Gaussian更适合分子/簇模型；KDP周期性体相第一性原理通常优先考虑QE、VASP或CASTEP。"
+            "如果使用簇模型，必须解释边界截断和环境嵌入如何处理。"
+        )
+
+    workflows = {
         "DFT/第一性原理": [
-            ("结构与基准", "CIF / 超胞 / k 点 / 截断能 / 泛函与收敛"),
-            ("缺陷模型", "缺陷位置 / 电荷态 / 结构优化 / 形成能"),
-            ("电子与光学", "TDOS / PDOS / 电荷密度 / 介电函数 / 吸收谱"),
-            ("实验验证", "与 UV 吸收、缺陷表征和损伤现象对照"),
+            ("1. 完美晶体基准", "CIF核对 → 晶格/原子位置 → 截断能与k点收敛 → 结构优化"),
+            ("2. 缺陷模型", "建立超胞 → 枚举缺陷位置/电荷态 → 检查缺陷间相互作用 → 结构弛豫"),
+            ("3. 能量与电子结构", "形成能/相对稳定性 → TDOS/PDOS → 电荷密度/局域态 → 必要时光学响应"),
+            ("4. 数值可靠性", "超胞、截断能、k点、泛函/赝势、展宽等必须有收敛或敏感性说明"),
+            ("5. 科学验证", "与核心KDP文献和实验现象对照；异常结果先排查模型和数值参数"),
         ],
         "分子动力学 MD": [
-            ("模型与势函数", "完整晶体基准 / 势函数有效性"),
-            ("工况设计", "缺陷 / 热循环 / 加工 / 冲击"),
-            ("演化量", "位错 / 裂纹 / 原子应力 / 能量"),
-            ("验证", "与形貌、裂纹位置、热学结果比较"),
+            ("1. 结构与势函数", "建立KDP原子模型 → 明确势函数来源与适用范围 → 完美晶体基准验证"),
+            ("2. 工况与边界", "缺陷/热循环/加工载荷 → 系综、时间步长、边界条件 → 尺寸与时间尺度检查"),
+            ("3. 演化量", "原子应力、位移、能量、缺陷演化、微裂纹或加工损伤指标"),
+            ("4. 稳健性", "时间步长、体系尺寸、升降温速率和势函数敏感性"),
+            ("5. 实验映射", "与显微形貌、裂纹位置、亚表面损伤或热学行为比较"),
         ],
         "有限元 FEA": [
-            ("材料参数", "各向异性弹性 / 热膨胀 / 导热"),
-            ("边界条件", "温度 / 浓度 / 夹持 / 籽晶固定"),
-            ("场分布", "主应力 / 应变能 / 危险区"),
-            ("实验映射", "与裂纹起点和方向进行空间共定位"),
+            ("1. 材料参数", "各向异性弹性、热膨胀、导热、密度等参数必须可追溯"),
+            ("2. 几何与边界", "真实晶体尺寸 → 籽晶/夹持 → 温度/浓度边界 → 接触与约束"),
+            ("3. 网格与求解", "网格无关性 → 时间步/稳态选择 → 多物理场耦合假设"),
+            ("4. 场与危险区", "主应力、应变能、温度梯度、局部应力集中与裂纹危险区域"),
+            ("5. 空间验证", "与真实裂纹起点/方向、固定位置和实验温度过程做共定位验证"),
         ],
     }
-    section_title("推荐工作流", "根据计算类型自动给出主干路线")
-    mini_cards(skeletons[method])
+    section_title("计算主流程", "每个环节都要能回到“为什么这样建模”和“如何验证”")
+    mini_cards(workflows[method])
+
+    file_checklists = {
+        "Quantum ESPRESSO": [
+            ("结构优化", "relax.in / vc-relax.in：先确定是否真的需要变胞"),
+            ("静态基态", "scf.in：在优化结构上得到自洽电荷密度"),
+            ("电子结构", "nscf.in + dos.x / projwfc.x：DOS/PDOS；能带需单独高对称路径"),
+            ("光学", "根据方法和QE模块选择介电/光学后处理；不能把默认设置直接当收敛结果"),
+        ],
+        "VASP": [
+            ("结构文件", "POSCAR + POTCAR：元素顺序和赝势版本必须记录"),
+            ("优化", "INCAR-relax + KPOINTS：先做截断能/k点收敛"),
+            ("静态/DOS", "静态SCF → DOS/PDOS；缺陷体系注意电荷态与有限尺寸效应"),
+            ("结果归档", "OUTCAR/OSZICAR/vasprun.xml及所用输入文件一起保存，保证可复现"),
+        ],
+        "Materials Studio (CASTEP)": [
+            ("结构", "CIF/XSD核对H位置、空间群与周期边界"),
+            ("Geometry Optimization", "先做cutoff和k-point convergence，再进行缺陷比较"),
+            ("Properties", "Band/DOS/Optics按研究问题选择，不把软件默认参数当科学依据"),
+            ("归档", "保存结构、Calculation设置截图/参数和输出文件"),
+        ],
+        "Gaussian（簇模型/局域模型）": [
+            ("模型边界", "说明为何采用簇模型、边界原子如何饱和/嵌入"),
+            ("基组/泛函", "必须有体系适用性与收敛/敏感性说明"),
+            ("结果边界", "局域簇结果不能直接替代周期体相能带/缺陷形成能结论"),
+        ],
+        "LAMMPS": [
+            ("结构与势", "data文件 + 势函数参数，先验证晶格/弹性/热学基准"),
+            ("工况脚本", "平衡 → 加载/热循环/加工 → 输出轨迹与原子应力"),
+            ("稳健性", "时间步长、体系尺寸、边界和势函数敏感性"),
+        ],
+        "Materials Studio (Forcite)": [
+            ("力场", "首先确认力场对KDP/离子/氢键体系是否适用"),
+            ("动力学", "系综、时间步长、升降温路径和约束需明确"),
+            ("验证", "先验证基础结构/热学性质，再用于机制推断"),
+        ],
+        "Python后处理": [
+            ("数据入口", "只做结果处理/统计/可视化，不替代物理求解器"),
+            ("可复现", "脚本版本、输入文件和输出图表一起归档"),
+        ],
+        "COMSOL": [
+            ("几何/材料", "真实尺寸 + 各向异性材料参数 + 参数来源"),
+            ("物理场", "Heat Transfer + Solid Mechanics；按问题决定是否增加传质/接触"),
+            ("边界条件", "温度过程、夹持、对流/接触必须来自真实实验或有依据的假设"),
+            ("验证", "网格无关性 + 参数敏感性 + 裂纹起点空间共定位"),
+        ],
+        "ANSYS": [
+            ("模型", "几何、材料坐标系、各向异性参数与约束"),
+            ("求解", "热分析 → 结构耦合或直接耦合；记录网格与时间步"),
+            ("验证", "应力热点与真实裂纹位置/方向比较"),
+        ],
+    }
+    section_title("软件输入/归档清单", "网页帮你把任务拆清楚；实际文件仍在相应软件中建立和运行")
+    mini_cards(file_checklists.get(software, []))
 
     evidence = search_papers(df, f"{method} {target} {goal}", 18, "KDP主线")
-    section_title("方法证据", "优先参考 KDP 直接理论工作；同位素材料仅在明确对照问题中作为扩展证据")
+    section_title("KDP方法证据", "计算参数和建模假设优先从KDP直接工作中找依据")
     evidence_table(evidence, height=390)
 
-    if st.button("生成完整计算方案", type="primary"):
+    task_payload = {
+        "method": method,
+        "target": target,
+        "software": software,
+        "goal": goal,
+        "workflow": workflows[method],
+        "checklist": file_checklists.get(software, []),
+    }
+
+    c1, c2 = st.columns(2)
+    if c1.button("保存计算任务到当前研究项目"):
+        add_item(
+            "theory_task",
+            f"{method}｜{target}",
+            goal,
+            task_payload,
+            "理论计算工作流",
+            "待计算",
+        )
+        st.success("计算任务已进入项目记忆；完成外部求解后可以回到这里记录结果。")
+
+    if c2.button("生成AI完整计算方案", type="primary"):
         ok, _ = api_status()
         if not ok:
             st.warning("当前未连接 DeepSeek。")
-            return
-        try:
-            with st.status("正在生成计算路线…", expanded=False):
-                answer, sources = run_agent(
-                    f"{method}; {target}; 软件={software}; 目标={goal}",
-                    evidence,
-                    "理论方案",
-                )
-            with st.container(border=True):
-                st.markdown(answer)
-            sources_block(sources)
-            render_deepseek_usage()
-        except Exception as exc:
-            safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
+        else:
+            try:
+                with st.status("正在结合KDP证据生成计算路线…", expanded=False):
+                    answer, sources = run_agent(
+                        f"{method}; {target}; 软件={software}; 目标={goal}",
+                        evidence,
+                        "理论方案",
+                        "必须明确哪些步骤由外部求解器完成，并给出收敛、验证、失败排查和结果解释边界。",
+                    )
+                with st.container(border=True):
+                    st.markdown(answer)
+                sources_block(sources)
+                render_deepseek_usage()
+            except Exception as exc:
+                safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
+    with st.expander("计算结果回填", expanded=False):
+        tasks = list_items("theory_task")
+        if not tasks:
+            st.caption("当前项目尚无已保存计算任务。")
+        else:
+            mapping = {f"{x['title']}｜{x['created_at'][:10]}": x for x in tasks}
+            selected = st.selectbox("对应计算任务", list(mapping), key="theory_result_task")
+            status = st.selectbox("计算状态", ["已收敛", "未收敛", "部分完成", "结果异常/待排查"])
+            key_output = st.text_area("关键结果 / 异常 / 与实验或文献的比较", height=110)
+            if st.button("保存计算结果"):
+                task = mapping[selected]
+                add_item(
+                    "theory_result",
+                    "计算结果：" + task["title"],
+                    key_output,
+                    {"task_id": task["id"], "calculation_status": status},
+                    "理论计算工作流",
+                    status,
+                )
+                st.success("结果已回填到项目记忆，可供后续AI分析和研究决策读取。")
 
 def gaps():
     df = _df()
@@ -1218,6 +1653,8 @@ def gaps():
         "用证据规模、近期活跃度和方法覆盖判断哪些方向已拥挤，哪些方向仍值得深入。",
         "RESEARCH OPPORTUNITY MAP",
     )
+
+    project_context_strip()
 
     stats = topic_stats(df).copy()
     stats["近期占比"] = (stats["近5年"] / stats["总文献"].replace(0, np.nan) * 100).fillna(0).round(1)
@@ -1273,6 +1710,16 @@ def gaps():
                 st.markdown(answer)
             sources_block(sources)
             render_deepseek_usage()
+            if st.button("保存研究空白分析到当前研究项目"):
+                add_item(
+                    "direction_decision",
+                    "研究空白分析：" + topic,
+                    answer[:1600],
+                    {"topic": topic, "full_answer": answer},
+                    "研究空白",
+                    "待导师/全文核验",
+                )
+                st.success("已保存到当前项目记忆。")
         except Exception as exc:
             safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
@@ -1280,10 +1727,12 @@ def gaps():
 def ai_agent():
     df = _df()
     page_header(
-        "科研问答与证据分析",
-        "融合本地文献库、外部补充资料与领域分析；全过程保留检索状态、证据编号与来源。",
+        "AI科研助手",
+        "不仅回答问题，还会读取当前研究项目中已经保存的文献、假设、实验、诊断和计算记忆，保持科研工作的连续性。",
         "RESEARCH EVIDENCE DESK",
     )
+
+    project_context_strip()
 
     with st.container(border=True):
         c1, c2, c3 = st.columns([1, 1, 1])
@@ -1366,9 +1815,20 @@ def ai_agent():
     render_deepseek_usage()
     st.download_button(
         "导出回答 Word",
-        docx_bytes("科研问答与证据分析", answer, sources),
-        "科研问答与证据分析.docx",
+        docx_bytes("AI科研助手分析", answer, sources),
+        "AI科研助手分析.docx",
     )
+
+    if answer and st.button("保存这次AI分析到当前研究项目"):
+        add_item(
+            "ai_note",
+            question[:80] + ("…" if len(question) > 80 else ""),
+            answer[:1600],
+            {"question": question, "task": task, "model": model_used, "full_answer": answer},
+            "AI科研助手",
+            "待核验",
+        )
+        st.success("已保存。后续AI会读取这条项目记忆，而不需要你重复讲背景。")
 
 
 def reports():
@@ -1378,6 +1838,8 @@ def reports():
         "把专题调研、方向论证、理论方案和诊断结果直接转成可继续编辑的研究报告。",
         "REPORT STUDIO",
     )
+
+    project_context_strip()
 
     templates = [
         "组会专题汇报",
@@ -1421,6 +1883,16 @@ def reports():
             docx_bytes(topic + "-" + kind, answer, sources),
             topic + "_" + kind + ".docx",
         )
+        if st.button("保存报告到当前研究项目"):
+            add_item(
+                "report",
+                kind + "：" + topic,
+                answer[:1600],
+                {"kind": kind, "topic": topic, "full_answer": answer},
+                "报告中心",
+                "草稿",
+            )
+            st.success("已保存到当前项目记忆。")
     except Exception as exc:
         safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
@@ -1480,6 +1952,32 @@ def audit():
         fig.add_trace(go.Bar(y=miss["字段"], x=miss["缺失"], orientation="h", name="缺失", marker_color="#E77A7E"))
         fig.update_layout(barmode="stack", xaxis_title="记录数", yaxis_title="")
         plotly(fig, height=470, key="audit_missing")
+
+    section_title("证据质量", "不再单独设置“可信度中心”；可靠性直接作为数据审计和各科研模块的底层约束")
+    kdp = material_scope(df, "KDP主线")
+    s = kdp[kdp["V5推荐等级"] == "S 核心 50"]
+    if len(s):
+        s_complete = float((s["证据完整度分"] >= 70).mean() * 100) if "证据完整度分" in s else 0.0
+        s_ab = float(s["证据使用等级"].isin(["A 可用于重点论证", "B 可用于辅助论证"]).mean() * 100) if "证据使用等级" in s else 0.0
+        s_pending = int(
+            (
+                s["作用机制"].isin(["待核验（摘要未明确）", "摘要证据不足"])
+                | s["宏观结果"].isin(["待核验（摘要未明确）", "摘要证据不足"])
+                | s["_方法标签"].isin(["待核验（摘要未明确）", "摘要证据不足"])
+            ).sum()
+        )
+    else:
+        s_complete = s_ab = 0.0
+        s_pending = 0
+
+    metric_cards(
+        [
+            {"label": "S层完整度达标", "value": f"{s_complete:.0f}%", "note": "完整度≥70", "accent": COLORS["teal"]},
+            {"label": "S层A/B可用证据", "value": f"{s_ab:.0f}%", "note": "可重点/辅助论证", "accent": COLORS["cyan"]},
+            {"label": "S层待核字段", "value": s_pending, "note": "越少越好", "accent": COLORS["orange"]},
+            {"label": "人工Gold Standard", "value": "待建立", "note": "未完成前不宣称AI准确率", "accent": COLORS["violet"]},
+        ]
+    )
 
     section_title("推荐等级明细", "用于确认每一层的实际记录规模")
     st.dataframe(tiers, width="stretch", hide_index=True)

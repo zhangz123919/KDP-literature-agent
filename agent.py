@@ -6,8 +6,9 @@ from openai import OpenAI
 
 from engine import compact_context
 from web_research import research_web, source_links_markdown
-from security import enforce_ai_quota, validate_user_text
+from security import enforce_ai_quota, guard_duplicate_ai_request, validate_user_text
 from usage_monitor import record_deepseek_usage
+from research_memory import build_project_context
 
 
 SYSTEM = """
@@ -18,7 +19,8 @@ SYSTEM = """
 以及通用专业知识。
 
 规则：
-- 必须遵守文献证据完整度和核心证据层级，不得把低完整度文献包装成强证据。
+- 必须遵守文献证据完整度、核心证据层级和“证据使用等级”，不得把低完整度文献包装成强证据。
+- A级证据可以作为重点论证；B级应与其他独立证据交叉使用；C级只能作为线索；D级不得支撑强结论。
 - 默认研究对象是 KDP（KH2PO4）。
 - 除非用户明确提出 DKDP、氘化或同位素比较，否则不要主动把 DKDP 写入标题、主线、结论或推荐课题。
 - 如果使用 DKDP 文献，只能标注为“同位素对照/扩展证据”，不能替代 KDP 直接证据。
@@ -91,6 +93,7 @@ def _profile(task, question):
 
 def _prompt(question, evidence_df, task, extra, web_context, web_status):
     local_context, local_sources = compact_context(evidence_df)
+    project_context = build_project_context(for_external_ai=True)
 
     if "_证据层级" in evidence_df.columns:
         counts = evidence_df["_证据层级"].value_counts().to_dict()
@@ -114,6 +117,9 @@ Crossref={web_status.get('crossref')}
 OpenAlex={web_status.get('openalex')}
 Web={web_status.get('web')}
 
+【当前项目记忆】
+{project_context if project_context else "当前没有可用项目记忆。"}
+
 【本地文献】
 {local_context}
 
@@ -129,6 +135,8 @@ Web={web_status.get('web')}
 3. 综合判断要明确，不伪装成论文原结论。
 4. 不编造精确数值、DOI或URL。
 5. 科研决策/实验/计算问题给出可执行下一步。
+6. 如果项目记忆与当前问题有关，必须利用它保持前后连续；如果项目记忆明确标注“私密项目上下文未发送”，不得猜测其中内容。
+7. 不要把AI替代成实验设备或计算求解器；需要VASP/QE/LAMMPS/COMSOL等真正求解时必须明确说明。
 """
     return prompt, local_sources
 
@@ -137,6 +145,7 @@ def stream_agent(question, evidence_df, task="自动判断", extra=""):
     enforce_ai_quota()
     question = validate_user_text(question, "科研问题")
     extra = validate_user_text(extra, "额外条件")
+    guard_duplicate_ai_request(f"{task}|{question}|{extra}", window_seconds=30)
 
     """
     事件流：

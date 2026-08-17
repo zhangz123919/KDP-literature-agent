@@ -5,6 +5,9 @@ from agent import api_status
 from ui import apply_theme, sidebar_ai_status, sidebar_brand
 from security import safe_page, sidebar_security
 from direction_review import direction_review_page
+from experiment_lab import experiment_lab_page
+from project_workspace import project_workspace_page
+from research_memory import sidebar_project_switcher
 from views import (
     ai_agent,
     audit,
@@ -29,6 +32,7 @@ st.set_page_config(
 
 apply_theme()
 sidebar_brand()
+sidebar_project_switcher()
 
 pages = {
     "总览": [
@@ -38,6 +42,12 @@ pages = {
             icon=":material/dashboard:",
             default=True,
             url_path="overview",
+        ),
+        st.Page(
+            safe_page(project_workspace_page),
+            title="研究项目工作区",
+            icon=":material/account_tree:",
+            url_path="project",
         ),
     ],
     "文献与知识": [
@@ -86,8 +96,14 @@ pages = {
             url_path="experiment",
         ),
         st.Page(
+            safe_page(experiment_lab_page),
+            title="实验研究库",
+            icon=":material/database:",
+            url_path="experiment-log",
+        ),
+        st.Page(
             safe_page(theory),
-            title="理论计算助手",
+            title="理论计算工作流",
             icon=":material/science:",
             url_path="theory",
         ),
@@ -101,7 +117,7 @@ pages = {
     "分析与输出": [
         st.Page(
             safe_page(ai_agent),
-            title="科研问答",
+            title="AI科研助手",
             icon=":material/forum:",
             url_path="ai",
         ),
