@@ -102,7 +102,7 @@ pages = {
         st.Page(
             safe_page(ai_agent),
             title="科研问答",
-            icon=":material/smart_toy:",
+            icon=":material/forum:",
             url_path="ai",
         ),
         st.Page(

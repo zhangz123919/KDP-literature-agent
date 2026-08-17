@@ -19,6 +19,7 @@ from usage_monitor import render_deepseek_usage
 from ui import (
     COLORS,
     evidence_table,
+    insight_strip,
     metric_cards,
     mini_cards,
     page_header,
@@ -71,13 +72,49 @@ def dashboard():
         ]
     )
 
-    section_title("研究主线", "统一用“来源—机制—后果—验证”组织开裂与缺陷问题")
+    stats_raw = topic_stats(df).copy()
+    stats_valid = stats_raw[stats_raw["总文献"] > 0].copy()
+    stats_valid["近五年占比"] = (
+        stats_valid["近5年"] / stats_valid["总文献"].replace(0, np.nan) * 100
+    ).fillna(0)
+    stats_valid["核心密度"] = (
+        stats_valid["S/A"] / stats_valid["总文献"].replace(0, np.nan) * 100
+    ).fillna(0)
+
+    hot = stats_valid.sort_values(["近5年", "总文献"], ascending=False).iloc[0] if len(stats_valid) else None
+    dense = stats_valid.sort_values(["核心密度", "S/A"], ascending=False).iloc[0] if len(stats_valid) else None
+    dft = stats_valid.sort_values(["DFT", "总文献"], ascending=False).iloc[0] if len(stats_valid) else None
+
+    insight_strip(
+        [
+            {
+                "kicker": "RECENT ACTIVITY",
+                "title": hot["专题"] if hot is not None else "—",
+                "note": f"近五年 {int(hot['近5年'])} 篇 · 当前库近期文献量最高" if hot is not None else "暂无数据",
+                "accent": COLORS["primary"],
+            },
+            {
+                "kicker": "CORE EVIDENCE",
+                "title": dense["专题"] if dense is not None else "—",
+                "note": f"S/A {int(dense['S/A'])} 篇 · 核心证据密度 {dense['核心密度']:.1f}%" if dense is not None else "暂无数据",
+                "accent": COLORS["orange"],
+            },
+            {
+                "kicker": "THEORY COVERAGE",
+                "title": dft["专题"] if dft is not None else "—",
+                "note": f"DFT相关 {int(dft['DFT'])} 篇 · 用于观察理论覆盖结构" if dft is not None else "暂无数据",
+                "accent": COLORS["cyan"],
+            },
+        ]
+    )
+
+    section_title("研究主线", "以“缺陷来源—局部机制—宏观后果—验证控制”统一组织研究问题")
     research_chain()
 
-    left, right = st.columns([1.04, 1], gap="large")
+    left, right = st.columns([1.05, 1], gap="large")
     with left:
         section_title("专题证据规模", "快速判断哪些问题已有较厚证据，哪些仍需补充")
-        stats = topic_stats(df).sort_values("总文献", ascending=True)
+        stats = stats_raw.sort_values("总文献", ascending=True)
 
         fig = go.Figure()
 
@@ -89,7 +126,7 @@ def dashboard():
                 orientation="h",
                 name="全部相关文献",
                 marker=dict(
-                    color="#DCE4EF",
+                    color="#DCE5EE",
                     line=dict(width=0),
                 ),
                 hovertemplate="<b>%{y}</b><br>全部相关文献 %{x} 篇<extra></extra>",
@@ -104,12 +141,12 @@ def dashboard():
                 orientation="h",
                 name="近五年",
                 marker=dict(
-                    color="#22AFC3",
+                    color=COLORS["primary"],
                     line=dict(width=0),
                 ),
                 text=stats["近5年"].where(stats["近5年"] > 0, ""),
                 textposition="outside",
-                textfont=dict(size=10, color="#5E6E84"),
+                textfont=dict(size=10, color="#52677F"),
                 hovertemplate="<b>%{y}</b><br>近五年 %{x} 篇<extra></extra>",
             )
         )
@@ -157,7 +194,28 @@ def dashboard():
                 hovertemplate="%{x}<br>%{y} 篇<extra></extra>",
             )
         )
-        fig.update_layout(xaxis_title="年份", yaxis_title="发文量")
+        if max_year:
+            fig.add_vrect(
+                x0=max_year - 4.5,
+                x1=max_year + .5,
+                fillcolor="rgba(19,89,166,.045)",
+                line_width=0,
+                layer="below",
+            )
+            fig.add_annotation(
+                x=max_year - 2,
+                y=1,
+                yref="paper",
+                text="近五年",
+                showarrow=False,
+                yshift=10,
+                font=dict(size=10, color="#1359A6"),
+            )
+        fig.update_layout(
+            xaxis_title="年份",
+            yaxis_title="发文量",
+            showlegend=False,
+        )
         plotly(fig, height=520, key="dashboard_trend")
 
     section_title("核心证据库", "S 核心 50：用于开题、机制论证和关键路线设计的优先文献")

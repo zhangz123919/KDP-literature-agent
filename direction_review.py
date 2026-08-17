@@ -14,7 +14,7 @@ from openai import OpenAI
 from engine import TOPICS, load_data, search_papers, topic_search, topic_stats
 from reports import docx_bytes, excel_bytes
 from security import enforce_ai_quota, remaining_ai_calls, safe_error, validate_user_text
-from ui import COLORS, metric_cards, page_header, plotly, section_title, soft_note
+from ui import COLORS, insight_strip, metric_cards, page_header, plotly, section_title, soft_note
 from usage_monitor import record_deepseek_usage, render_deepseek_usage
 from web_research import research_web, source_links_markdown
 
@@ -189,9 +189,9 @@ def _make_landscape_figure(stats: pd.DataFrame):
             x=s["总文献"],
             y=s["专题"],
             orientation="h",
-            name="全部相关文献",
-            marker_color="#DCE4EF",
-            hovertemplate="<b>%{y}</b><br>总量 %{x} 篇<extra></extra>",
+            name="长期积累",
+            marker=dict(color="#DCE5EE", line=dict(width=0)),
+            hovertemplate="<b>%{y}</b><br>全部相关文献 %{x} 篇<extra></extra>",
         )
     )
 
@@ -201,56 +201,108 @@ def _make_landscape_figure(stats: pd.DataFrame):
             y=s["专题"],
             orientation="h",
             name="近五年",
-            marker_color=COLORS["cyan"],
+            marker=dict(color=COLORS["primary"], line=dict(width=0)),
+            text=s["近5年"].where(s["近5年"] > 0, ""),
+            textposition="outside",
+            textfont=dict(size=10, color="#52677F"),
             hovertemplate="<b>%{y}</b><br>近五年 %{x} 篇<extra></extra>",
         )
     )
 
     fig.update_layout(
         barmode="overlay",
-        bargap=.28,
+        bargap=.32,
         xaxis_title="文献数",
         yaxis_title="",
-        legend=dict(orientation="h", x=0, y=1.08),
+        legend=dict(orientation="h", x=0, y=1.07),
     )
 
     return fig
 
 
 def _make_method_gap_figure(stats: pd.DataFrame):
-    s = stats.copy().sort_values("近5年占比", ascending=False)
+    s = stats.copy().sort_values("近五年占比", ascending=False)
+    if s.empty:
+        return go.Figure()
 
-    fig = go.Figure(
+    x_mid = float(s["总文献"].median())
+    y_mid = float(s["近五年占比"].median())
+
+    # 只给最值得辨认的点常驻标签，避免像默认散点图一样满屏文字。
+    label_score = (
+        s["近五年占比"].rank(pct=True)
+        + s["S/A"].rank(pct=True)
+        + s["总文献"].rank(pct=True) * .45
+    )
+    top_label_idx = set(label_score.nlargest(min(7, len(s))).index)
+    labels = [row["专题"] if idx in top_label_idx else "" for idx, row in s.iterrows()]
+
+    fig = go.Figure()
+
+    # 四象限的极淡背景，只作为读图辅助。
+    x_max = max(float(s["总文献"].max()) * 1.08, x_mid + 1)
+    y_max = max(float(s["近五年占比"].max()) * 1.12, y_mid + 1)
+
+    fig.add_shape(
+        type="rect", x0=x_mid, x1=x_max, y0=y_mid, y1=y_max,
+        fillcolor="rgba(19,89,166,.045)", line_width=0, layer="below"
+    )
+
+    fig.add_vline(x=x_mid, line_width=1, line_dash="dot", line_color="rgba(91,109,130,.45)")
+    fig.add_hline(y=y_mid, line_width=1, line_dash="dot", line_color="rgba(91,109,130,.45)")
+
+    fig.add_trace(
         go.Scatter(
             x=s["总文献"],
-            y=s["近5年占比"],
+            y=s["近五年占比"],
             mode="markers+text",
-            text=s["专题"],
+            text=labels,
             textposition="top center",
+            textfont=dict(size=10, color="#314B67"),
+            customdata=np.stack(
+                [s["专题"], s["S/A"], s["DFT"], s["核心文献密度"]],
+                axis=-1,
+            ),
             marker=dict(
-                size=np.clip(12 + s["S/A"].to_numpy() * .18, 14, 48),
+                size=np.clip(12 + s["S/A"].to_numpy() * .16, 14, 42),
                 color=s["DFT占比"],
                 colorscale=[
-                    [0, "#D7E0EC"],
-                    [.45, "#8C84E9"],
-                    [1, "#20AFC0"],
+                    [0, "#D6E2EE"],
+                    [.52, "#4E82BE"],
+                    [1, "#0E8F96"],
                 ],
-                colorbar=dict(title="DFT占比 %"),
-                line=dict(color="white", width=1),
-                opacity=.92,
+                colorbar=dict(
+                    title=dict(text="DFT占比", font=dict(size=10)),
+                    thickness=9,
+                    len=.62,
+                    outlinewidth=0,
+                ),
+                line=dict(color="#FFFFFF", width=1.2),
+                opacity=.93,
             ),
             hovertemplate=(
-                "<b>%{text}</b><br>"
-                "总文献 %{x}<br>"
-                "近五年占比 %{y:.1f}%"
+                "<b>%{customdata[0]}</b><br>"
+                "证据规模 %{x} 篇<br>"
+                "近五年占比 %{y:.1f}%<br>"
+                "S/A %{customdata[1]} 篇<br>"
+                "DFT %{customdata[2]} 篇"
                 "<extra></extra>"
             ),
         )
     )
 
+    fig.add_annotation(
+        x=x_max, y=y_max,
+        text="证据较厚 · 近期更活跃",
+        showarrow=False,
+        xanchor="right", yanchor="top",
+        font=dict(size=10, color="#1359A6"),
+    )
+
     fig.update_layout(
         xaxis_title="证据规模（文献数）",
         yaxis_title="近五年占比（%）",
+        showlegend=False,
     )
     return fig
 
@@ -653,6 +705,37 @@ def direction_review_page():
         ]
     )
 
+    valid = stats[stats["总文献"] > 0].copy()
+    if len(valid):
+        active = valid.sort_values(["近五年占比", "近5年"], ascending=False).iloc[0]
+        evidence = valid.sort_values(["总文献", "S/A"], ascending=False).iloc[0]
+        core = valid.assign(
+            _core_density=valid["S/A"] / valid["总文献"].replace(0, np.nan) * 100
+        ).sort_values(["_core_density", "S/A"], ascending=False).iloc[0]
+
+        insight_strip(
+            [
+                {
+                    "kicker": "EVIDENCE BASE",
+                    "title": evidence["专题"],
+                    "note": f"当前证据规模 {int(evidence['总文献'])} 篇",
+                    "accent": COLORS["primary"],
+                },
+                {
+                    "kicker": "RECENT MOMENTUM",
+                    "title": active["专题"],
+                    "note": f"近五年占比 {active['近五年占比']:.1f}% · {int(active['近5年'])} 篇",
+                    "accent": COLORS["cyan"],
+                },
+                {
+                    "kicker": "CORE DENSITY",
+                    "title": core["专题"],
+                    "note": f"S/A {int(core['S/A'])} 篇 · 核心密度 {core['_core_density']:.1f}%",
+                    "accent": COLORS["orange"],
+                },
+            ]
+        )
+
     section = st.segmented_control(
         "方向决策工作区",
         ["领域全景", "代表证据与候选方向", "生成完整方向决策报告"],
@@ -671,7 +754,7 @@ def direction_review_page():
         with left:
             section_title(
                 "专题证据规模",
-                "灰色代表长期积累，青色代表近五年；先看真实研究规模和近期活跃度",
+                "浅灰表示长期积累，国科蓝表示近五年；用来观察不同专题的证据厚度与近期动量",
             )
             fig = _make_landscape_figure(stats)
             plotly(fig, height=650, key="direction_landscape")
@@ -679,7 +762,7 @@ def direction_review_page():
         with right:
             section_title(
                 "研究机会地图",
-                "横轴=证据规模，纵轴=近五年占比，节点颜色=DFT覆盖；用于发现值得深入核查的方向",
+                "横轴看证据厚度，纵轴看近期动量；节点大小反映核心文献，颜色反映DFT覆盖",
             )
             fig = _make_method_gap_figure(stats)
             plotly(fig, height=650, key="direction_gap")

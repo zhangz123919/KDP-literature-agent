@@ -11,21 +11,23 @@ import streamlit as st
 # ---- Design tokens ---------------------------------------------------------
 
 COLORS = {
-    "ink": "#142033",
-    "muted": "#66758C",
-    "primary": "#5B5BD6",
-    "primary2": "#6D5EF7",
-    "cyan": "#19B6C9",
-    "teal": "#22A699",
-    "orange": "#F28C52",
-    "red": "#E46A76",
-    "violet": "#8B6FD9",
-    "green": "#4FAF83",
-    "line": "#DCE4EF",
-    "soft": "#F4F7FB",
+    # “国科蓝系”视觉语言：以孔雀蓝/科研蓝为品牌轴，
+    # 不是复制学校官网，而是用于专业科研工作台的低饱和延展。
+    "ink": "#132A43",
+    "muted": "#5B6D82",
+    "primary": "#1359A6",
+    "primary2": "#2F73C9",
+    "cyan": "#0E9AA7",
+    "teal": "#16877F",
+    "orange": "#D9852F",
+    "red": "#C65353",
+    "violet": "#6B63B5",
+    "green": "#3C8C6E",
+    "line": "#D7E0E9",
+    "soft": "#F3F6F8",
     "surface": "#FFFFFF",
-    "dark": "#0B1220",
-    "dark2": "#111D31",
+    "dark": "#102A43",
+    "dark2": "#153B63",
 }
 
 
@@ -979,6 +981,485 @@ textarea:disabled,
     }}
 }}
 
+
+/* =======================================================================
+   FINAL VISUAL SYSTEM · 国科蓝科研期刊风
+   ======================================================================= */
+
+:root {{
+    --ns-blue: #1359A6;
+    --ns-blue-2: #2F73C9;
+    --ns-deep: #103B70;
+    --ns-ink: #132A43;
+    --ns-cyan: #0E9AA7;
+    --ns-teal: #16877F;
+    --ns-orange: #D9852F;
+    --ns-paper: #FBFBF8;
+    --ns-bg: #F4F5F4;
+    --ns-line: #D7E0E9;
+    --ns-muted: #5B6D82;
+}}
+
+/* 页面像“科研期刊工作台”，而不是 AI 聊天后台 */
+.stApp {{
+    background:
+        linear-gradient(90deg, rgba(19,89,166,.018) 1px, transparent 1px),
+        linear-gradient(rgba(19,89,166,.018) 1px, transparent 1px),
+        #F5F6F4 !important;
+    background-size: 44px 44px !important;
+}}
+
+.block-container {{
+    max-width: 1510px !important;
+    padding-top: 1.35rem !important;
+    padding-left: 2.35rem !important;
+    padding-right: 2.35rem !important;
+}}
+
+/* 顶栏 */
+header[data-testid="stHeader"] {{
+    background: rgba(250,250,247,.94) !important;
+    border-bottom: 1px solid rgba(19,89,166,.09) !important;
+}}
+
+/* 侧栏：不黑、不苍白；淡蓝灰底 + 品牌区 */
+section[data-testid="stSidebar"] {{
+    background:
+        linear-gradient(180deg, #F7F9FC 0%, #F1F5F8 100%) !important;
+    border-right: 1px solid #D5DFE9 !important;
+    box-shadow: 10px 0 30px rgba(22,57,94,.035) !important;
+}}
+
+section[data-testid="stSidebar"] [data-testid="stNavSectionHeader"] {{
+    color: #657891 !important;
+    font-size: 10.5px !important;
+    font-weight: 800 !important;
+    letter-spacing: .055em !important;
+    padding-top: 17px !important;
+}}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a {{
+    margin: 2px 8px !important;
+    padding: 9px 11px !important;
+    border-radius: 9px !important;
+}}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarNav"] a:hover {{
+    background: rgba(19,89,166,.055) !important;
+}}
+
+section[data-testid="stSidebar"] [aria-current="page"] {{
+    background: #E7F0FA !important;
+    color: #0E4D91 !important;
+    box-shadow: inset 3px 0 0 #1359A6 !important;
+}}
+
+section[data-testid="stSidebar"] [aria-current="page"] * {{
+    color: #0E4D91 !important;
+    font-weight: 760 !important;
+}}
+
+/* 品牌区：形成自己的 KDP/DKDP 识别，不直接套 AI 产品 logo */
+.kdp-brand {{
+    position: relative;
+    overflow: hidden;
+    margin: 9px 8px 7px 8px !important;
+    padding: 15px 14px 14px 14px !important;
+    border-radius: 14px !important;
+    background:
+        radial-gradient(circle at 92% 10%, rgba(255,255,255,.22), transparent 34%),
+        linear-gradient(135deg, #103F7B 0%, #1359A6 62%, #1D72B4 100%) !important;
+    box-shadow: 0 9px 25px rgba(16,63,123,.13) !important;
+}}
+
+.kdp-brand::after {{
+    content: "KH₂PO₄ · KD₂PO₄";
+    position: absolute;
+    right: 12px;
+    bottom: 9px;
+    color: rgba(255,255,255,.42);
+    font-size: 8.8px;
+    letter-spacing: .06em;
+}}
+
+.kdp-brand-mark {{
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 9px !important;
+    background: rgba(255,255,255,.14) !important;
+    border: 1px solid rgba(255,255,255,.26) !important;
+    color: white !important;
+    box-shadow: none !important;
+    font-size: 11px !important;
+}}
+
+.kdp-brand-title {{
+    color: #FFFFFF !important;
+    font-size: 15px !important;
+    font-weight: 790 !important;
+    letter-spacing: .01em !important;
+}}
+
+.kdp-brand-sub {{
+    color: rgba(244,249,255,.76) !important;
+    font-size: 10.3px !important;
+    line-height: 1.45 !important;
+}}
+
+/* 模型状态降权，不抢品牌 */
+.kdp-ai-badge {{
+    background: transparent !important;
+    border: 0 !important;
+    border-top: 1px solid #DFE6ED !important;
+    border-radius: 0 !important;
+    margin: 10px 13px 3px 13px !important;
+    padding: 10px 2px 4px 2px !important;
+}}
+.kdp-ai-badge * {{ color: #62758C !important; }}
+
+/* Hero：白纸 + 国科蓝书脊 + 化学式水印 */
+.kdp-hero {{
+    position: relative;
+    min-height: 118px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    border: 1px solid #D4DEE8 !important;
+    border-radius: 15px !important;
+    padding: 23px 31px 23px 31px !important;
+    background:
+        linear-gradient(100deg, rgba(19,89,166,.042), transparent 48%),
+        #FCFCFA !important;
+    box-shadow: 0 6px 18px rgba(18,54,91,.035) !important;
+}}
+
+.kdp-hero::before {{
+    width: 5px !important;
+    top: 20px !important;
+    bottom: 20px !important;
+    background: linear-gradient(180deg, #1359A6, #2F73C9) !important;
+}}
+
+.kdp-hero::after {{
+    content: "KDP / DKDP" !important;
+    width: auto !important;
+    height: auto !important;
+    right: 28px !important;
+    top: 26px !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    color: rgba(19,89,166,.055) !important;
+    font-size: 54px !important;
+    font-weight: 850 !important;
+    letter-spacing: -.04em !important;
+    transform: none !important;
+}}
+
+.kdp-eyebrow {{
+    width: fit-content;
+    color: #1359A6 !important;
+    background: #ECF3FA !important;
+    border: 1px solid #D8E6F3 !important;
+    border-radius: 999px !important;
+    font-size: 9px !important;
+    letter-spacing: .095em !important;
+}}
+
+.kdp-hero-title {{
+    color: #102A43 !important;
+    font-size: 31px !important;
+    font-weight: 820 !important;
+    letter-spacing: -.035em !important;
+}}
+
+.kdp-hero-sub {{
+    color: #52677F !important;
+    font-size: 13px !important;
+    max-width: 970px !important;
+}}
+
+/* 指标卡：用“书脊色”而非彩虹卡 */
+.kdp-metric-grid {{
+    gap: 10px !important;
+}}
+
+.kdp-metric-card {{
+    min-height: 110px !important;
+    padding: 17px 18px 15px 19px !important;
+    border: 1px solid #D6E0E9 !important;
+    border-radius: 12px !important;
+    background: #FEFEFC !important;
+    box-shadow: 0 4px 13px rgba(18,54,91,.026) !important;
+}}
+.kdp-metric-card::before {{
+    width: 3px !important;
+    border-radius: 0 3px 3px 0 !important;
+}}
+.kdp-metric-label {{
+    color: #5A6D84 !important;
+    font-size: 11.2px !important;
+}}
+.kdp-metric-value {{
+    color: #102A43 !important;
+    font-size: 27px !important;
+}}
+.kdp-metric-note {{
+    color: #748397 !important;
+    font-size: 10.6px !important;
+}}
+
+/* 编辑式“数据观察” */
+.kdp-insight-strip {{
+    display: grid;
+    grid-template-columns: repeat(var(--cols, 3), minmax(0,1fr));
+    gap: 10px;
+    margin: 1px 0 22px 0;
+}}
+.kdp-insight {{
+    position: relative;
+    padding: 13px 15px 13px 16px;
+    border-top: 1px solid #CFD9E4;
+    border-bottom: 1px solid #CFD9E4;
+    background: rgba(255,255,253,.50);
+}}
+.kdp-insight::before {{
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 13px;
+    bottom: 13px;
+    width: 2px;
+    background: var(--accent, #1359A6);
+}}
+.kdp-insight-kicker {{
+    color: #718196;
+    font-size: 9.5px;
+    font-weight: 780;
+    letter-spacing: .08em;
+    margin-bottom: 5px;
+}}
+.kdp-insight-title {{
+    color: #16324F;
+    font-size: 15px;
+    font-weight: 770;
+    line-height: 1.35;
+}}
+.kdp-insight-note {{
+    color: #60738A;
+    font-size: 10.8px;
+    margin-top: 4px;
+}}
+
+/* 研究链条：像科研流程图，不再四张 AI 卡片 */
+.kdp-chain-grid {{
+    position: relative;
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 0 !important;
+    margin: 6px 0 25px 0 !important;
+    border-top: 1px solid #CAD6E2;
+    border-bottom: 1px solid #CAD6E2;
+    background: rgba(255,255,253,.52);
+}}
+.kdp-chain-step {{
+    position: relative;
+    min-height: 112px !important;
+    padding: 17px 19px 15px 19px !important;
+    border: 0 !important;
+    border-right: 1px solid #D7E0E9 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+}}
+.kdp-chain-step:last-child {{ border-right: 0 !important; }}
+.kdp-chain-step::before {{
+    content: "";
+    position: absolute;
+    top: -4px;
+    left: 19px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #1359A6;
+    box-shadow: 0 0 0 4px #EDF3F9;
+}}
+.kdp-chain-kicker {{
+    color: #1359A6 !important;
+    font-size: 9.5px !important;
+    letter-spacing: .085em !important;
+}}
+.kdp-chain-name {{
+    color: #17324E !important;
+    font-size: 14.5px !important;
+    font-weight: 780 !important;
+    margin-top: 6px !important;
+}}
+.kdp-chain-desc {{
+    color: #607287 !important;
+    font-size: 10.8px !important;
+    line-height: 1.55 !important;
+}}
+
+/* 小标题更像论文栏目 */
+.kdp-section-head {{
+    margin-top: 27px !important;
+    margin-bottom: 11px !important;
+}}
+.kdp-section-title {{
+    position: relative;
+    color: #17324E !important;
+    font-size: 18px !important;
+    font-weight: 790 !important;
+    padding-left: 11px;
+}}
+.kdp-section-title::before {{
+    content: "";
+    position: absolute;
+    left: 0;
+    top: .18em;
+    bottom: .18em;
+    width: 3px;
+    border-radius: 3px;
+    background: #1359A6;
+}}
+.kdp-section-sub {{
+    color: #66788C !important;
+    margin-left: 11px;
+    margin-top: 3px;
+    font-size: 11.5px !important;
+}}
+
+/* 表单/容器：去“所有东西都是大圆角卡片”的AI味 */
+div[data-testid="stVerticalBlockBorderWrapper"] {{
+    border: 1px solid #D5DFE8 !important;
+    border-radius: 11px !important;
+    background: #FDFDFC !important;
+    box-shadow: 0 3px 10px rgba(18,54,91,.02) !important;
+}}
+div[data-testid="stForm"] {{
+    border-radius: 11px !important;
+    background: #FDFDFC !important;
+}}
+
+/* 字体清晰度 */
+p, label, .stCaption,
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stCaptionContainer"] {{
+    color: #53677E !important;
+}}
+[data-testid="stWidgetLabel"] p,
+label[data-baseweb="form-control-label"] {{
+    color: #2B445F !important;
+    font-weight: 700 !important;
+    font-size: 12.8px !important;
+}}
+input::placeholder, textarea::placeholder {{
+    color: #8190A2 !important;
+}}
+
+/* 输入区更像实验软件 */
+div[data-baseweb="input"] > div,
+div[data-baseweb="textarea"] > div,
+div[data-baseweb="select"] > div {{
+    border-color: #C8D5E2 !important;
+    border-radius: 7px !important;
+    background: #FFFFFF !important;
+}}
+div[data-baseweb="input"] > div:focus-within,
+div[data-baseweb="textarea"] > div:focus-within,
+div[data-baseweb="select"] > div:focus-within {{
+    border-color: #1359A6 !important;
+    box-shadow: 0 0 0 2px rgba(19,89,166,.09) !important;
+}}
+
+/* 主按钮：单一国科蓝，不要霓虹/AI渐变 */
+.stButton > button[kind="primary"] {{
+    background: #1359A6 !important;
+    border: 1px solid #1359A6 !important;
+    color: #FFFFFF !important;
+    border-radius: 7px !important;
+    box-shadow: 0 4px 10px rgba(19,89,166,.15) !important;
+}}
+.stButton > button[kind="primary"]:hover {{
+    background: #0F4B8D !important;
+    border-color: #0F4B8D !important;
+}}
+
+/* 普通按钮减少圆润感 */
+.stButton > button,
+.stDownloadButton > button {{
+    border-radius: 7px !important;
+}}
+
+/* Segmented control：彻底消除默认红色 */
+[data-testid="stSegmentedControl"] button,
+[data-testid="stSegmentedControl"] [role="radio"],
+[data-testid="stSegmentedControl"] label {{
+    border-color: #CFD9E4 !important;
+    color: #50647B !important;
+    background: #FCFCFA !important;
+}}
+[data-testid="stSegmentedControl"] button[aria-pressed="true"],
+[data-testid="stSegmentedControl"] [role="radio"][aria-checked="true"],
+[data-testid="stSegmentedControl"] label:has(input:checked) {{
+    border-color: #1359A6 !important;
+    color: #0E4D91 !important;
+    background: #EAF2FA !important;
+}}
+[data-testid="stSegmentedControl"] label:has(input:checked) * {{
+    color: #0E4D91 !important;
+}}
+
+/* Radio 默认红点也替换为科研蓝 */
+[data-testid="stRadio"] input:checked + div,
+[data-testid="stRadio"] [aria-checked="true"] > div:first-child {{
+    border-color: #1359A6 !important;
+}}
+[data-testid="stRadio"] svg {{
+    color: #1359A6 !important;
+}}
+
+/* 表格更像数据库，不像AI卡片 */
+div[data-testid="stDataFrame"] {{
+    border-radius: 8px !important;
+    border-color: #D4DEE8 !important;
+    box-shadow: none !important;
+}}
+
+/* 提示条 */
+.kdp-soft-note {{
+    border: 0 !important;
+    border-left: 3px solid #1359A6 !important;
+    border-radius: 0 !important;
+    background: #EEF4F9 !important;
+    color: #50657C !important;
+    padding: 11px 13px !important;
+}}
+
+/* API 用量和 st.metric */
+[data-testid="stMetricValue"] {{
+    color: #15324F !important;
+}}
+[data-testid="stMetricLabel"] p {{
+    color: #607287 !important;
+}}
+
+/* Plotly外部容器不再有默认大白块感 */
+[data-testid="stPlotlyChart"] {{
+    border-top: 1px solid rgba(203,215,227,.72);
+    padding-top: 5px;
+}}
+
+/* 手机 */
+@media (max-width: 800px) {{
+    .kdp-insight-strip {{ grid-template-columns: 1fr !important; }}
+    .kdp-chain-grid {{ grid-template-columns: 1fr !important; }}
+    .kdp-chain-step {{
+        border-right: 0 !important;
+        border-bottom: 1px solid #D7E0E9 !important;
+    }}
+    .kdp-hero::after {{ display:none !important; }}
+}}
+
 </style>
 """,
         unsafe_allow_html=True,
@@ -990,8 +1471,8 @@ def sidebar_brand():
         """
 <div class="kdp-brand">
     <div class="kdp-brand-mark">KDP</div>
-    <div class="kdp-brand-title">KDP/DKDP 研究工作台</div>
-    <div class="kdp-brand-sub">晶体缺陷 · 开裂 · 激光损伤<br>缺陷与开裂研究平台</div>
+    <div class="kdp-brand-title">KDP / DKDP 研究工作台</div>
+    <div class="kdp-brand-sub">晶体缺陷 · 生长 · 开裂<br>Evidence → Mechanism → Validation</div>
 </div>
 """,
         unsafe_allow_html=True,
@@ -1015,7 +1496,7 @@ def sidebar_ai_status(ok: bool, model: str):
     st.sidebar.caption("文献优先级不删库；联网检索按需参与分析，结果保留来源。")
 
 
-def page_header(title: str, subtitle: str, eyebrow: str = "KDP/DKDP RESEARCH WORKSPACE"):
+def page_header(title: str, subtitle: str, eyebrow: str = "KDP / DKDP RESEARCH WORKSPACE"):
     st.markdown(
         f"""
 <div class="kdp-hero">
@@ -1038,6 +1519,29 @@ def metric_cards(cards: Sequence[dict]):
   <div class="kdp-metric-label">{html.escape(str(card.get("label","")))}</div>
   <div class="kdp-metric-value">{html.escape(str(card.get("value","")))}</div>
   <div class="kdp-metric-note">{html.escape(str(card.get("note","")))}</div>
+</div>
+"""
+        )
+    parts.append("</div>")
+    st.markdown("".join(parts), unsafe_allow_html=True)
+
+
+
+def insight_strip(items: Sequence[dict]):
+    """编辑式数据观察条，用于突出真正值得先看的信息。"""
+    if not items:
+        return
+    cols = max(1, min(len(items), 4))
+    parts = [f'<div class="kdp-insight-strip" style="--cols:{cols};">']
+    palette = [COLORS["primary"], COLORS["cyan"], COLORS["orange"], COLORS["teal"]]
+    for i, item in enumerate(items):
+        accent = item.get("accent", palette[i % len(palette)])
+        parts.append(
+            f"""
+<div class="kdp-insight" style="--accent:{accent};">
+  <div class="kdp-insight-kicker">{html.escape(str(item.get("kicker","DATA NOTE")))}</div>
+  <div class="kdp-insight-title">{html.escape(str(item.get("title","")))}</div>
+  <div class="kdp-insight-note">{html.escape(str(item.get("note","")))}</div>
 </div>
 """
         )
@@ -1109,11 +1613,11 @@ def style_plot(fig: go.Figure, *, dark: bool = False, height: int | None = None)
         grid = "rgba(154,172,198,.12)"
         muted = "#96A8BF"
     else:
-        bg = "rgba(255,255,255,0)"
-        paper = "rgba(255,255,255,0)"
+        bg = "rgba(255,255,252,0)"
+        paper = "rgba(255,255,252,0)"
         text = COLORS["ink"]
-        grid = "#DDE4ED"
-        muted = "#5F7087"
+        grid = "rgba(180,195,210,.36)"
+        muted = "#5D7187"
 
     fig.update_layout(
         paper_bgcolor=paper,
@@ -1123,7 +1627,7 @@ def style_plot(fig: go.Figure, *, dark: bool = False, height: int | None = None)
             size=12,
             color=text,
         ),
-        margin=dict(l=26, r=20, t=48, b=24),
+        margin=dict(l=24, r=18, t=42, b=24),
         hoverlabel=dict(
             bgcolor="#101C2F" if dark else "#FFFFFF",
             bordercolor="#31415A" if dark else "#D9E2ED",
