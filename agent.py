@@ -7,6 +7,7 @@ from openai import OpenAI
 from engine import compact_context
 from web_research import research_web, source_links_markdown
 from security import enforce_ai_quota, validate_user_text
+from usage_monitor import record_deepseek_usage
 
 
 SYSTEM = """
@@ -191,6 +192,7 @@ def stream_agent(question, evidence_df, task="自动判断", extra=""):
             {"role": "user", "content": prompt},
         ],
         "stream": True,
+        "stream_options": {"include_usage": True},
     }
 
     if profile["thinking"]:
@@ -209,8 +211,13 @@ def stream_agent(question, evidence_df, task="自动判断", extra=""):
     response = client.chat.completions.create(**kwargs)
 
     reasoning_started = False
+    final_usage = None
 
     for chunk in response:
+        chunk_usage = getattr(chunk, "usage", None)
+        if chunk_usage is not None:
+            final_usage = chunk_usage
+
         if not chunk.choices:
             continue
 
@@ -239,10 +246,13 @@ def stream_agent(question, evidence_df, task="自动判断", extra=""):
             "text": source_md,
         }
 
+    usage_summary = record_deepseek_usage(model, final_usage)
+
     yield {
         "type": "done",
         "sources": local_sources,
         "model": model,
+        "usage": usage_summary,
     }
 
 

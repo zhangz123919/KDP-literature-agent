@@ -15,6 +15,7 @@ from diagnosis import VARIABLES, diagnose, experiment_matrix
 from engine import TOPICS, load_data, offline_summary, search_papers, topic_search, topic_stats
 from reports import docx_bytes, excel_bytes
 from security import safe_error
+from usage_monitor import render_deepseek_usage
 from ui import (
     COLORS,
     evidence_table,
@@ -823,6 +824,7 @@ def topic_review():
         with st.container(border=True):
             st.markdown(answer)
         sources_block(sources)
+        render_deepseek_usage()
         st.download_button(
             "导出 Word",
             docx_bytes(topic + "专题调研", answer, sources),
@@ -874,6 +876,7 @@ def compare():
             with st.container(border=True):
                 st.markdown(answer)
             sources_block(sources)
+            render_deepseek_usage()
         except Exception as exc:
             safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
@@ -960,6 +963,7 @@ def crack_diagnosis():
             with st.container(border=True):
                 st.markdown(answer)
             sources_block(sources)
+            render_deepseek_usage()
         except Exception as exc:
             safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
@@ -1070,6 +1074,7 @@ def theory():
             with st.container(border=True):
                 st.markdown(answer)
             sources_block(sources)
+            render_deepseek_usage()
         except Exception as exc:
             safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
@@ -1135,6 +1140,7 @@ def gaps():
             with st.container(border=True):
                 st.markdown(answer)
             sources_block(sources)
+            render_deepseek_usage()
         except Exception as exc:
             safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
 
@@ -1225,6 +1231,7 @@ def ai_agent():
             return
 
     sources_block(sources)
+    render_deepseek_usage()
     st.download_button(
         "导出回答 Word",
         docx_bytes("科研智能体回答", answer, sources),
@@ -1276,6 +1283,7 @@ def reports():
         with st.container(border=True):
             st.markdown(answer)
         sources_block(sources)
+        render_deepseek_usage()
         st.download_button(
             "导出 Word",
             docx_bytes(topic + "-" + kind, answer, sources),

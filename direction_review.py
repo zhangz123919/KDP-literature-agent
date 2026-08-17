@@ -15,6 +15,7 @@ from engine import TOPICS, load_data, search_papers, topic_search, topic_stats
 from reports import docx_bytes, excel_bytes
 from security import enforce_ai_quota, remaining_ai_calls, safe_error, validate_user_text
 from ui import COLORS, metric_cards, page_header, plotly, section_title, soft_note
+from usage_monitor import record_deepseek_usage, render_deepseek_usage
 from web_research import research_web, source_links_markdown
 
 
@@ -254,6 +255,59 @@ def _make_method_gap_figure(stats: pd.DataFrame):
     return fig
 
 
+
+def _usage_dict(usage) -> dict:
+    if usage is None:
+        return {}
+    if hasattr(usage, "model_dump"):
+        return usage.model_dump()
+    if isinstance(usage, dict):
+        return usage
+    return {
+        "prompt_tokens": getattr(usage, "prompt_tokens", 0),
+        "completion_tokens": getattr(usage, "completion_tokens", 0),
+        "total_tokens": getattr(usage, "total_tokens", 0),
+        "prompt_cache_hit_tokens": getattr(usage, "prompt_cache_hit_tokens", 0),
+        "prompt_cache_miss_tokens": getattr(usage, "prompt_cache_miss_tokens", 0),
+    }
+
+
+def _estimate_rmb(model: str, usage) -> dict:
+    """
+    按 DeepSeek 官方 2026-08 公开价做前端估算。
+    实际扣费以 DeepSeek 控制台账单为准。
+    """
+    u = _usage_dict(usage)
+    hit = int(u.get("prompt_cache_hit_tokens") or 0)
+    miss = int(u.get("prompt_cache_miss_tokens") or 0)
+    prompt = int(u.get("prompt_tokens") or 0)
+    completion = int(u.get("completion_tokens") or 0)
+
+    # 某些SDK/响应若未拆分hit/miss，则保守按全部未命中估算
+    if hit == 0 and miss == 0 and prompt:
+        miss = prompt
+
+    m = str(model or "").lower()
+    if "flash" in m:
+        hit_price, miss_price, out_price = 0.02, 1.0, 2.0
+    else:
+        hit_price, miss_price, out_price = 0.025, 3.0, 6.0
+
+    cost = (
+        hit / 1_000_000 * hit_price
+        + miss / 1_000_000 * miss_price
+        + completion / 1_000_000 * out_price
+    )
+    return {
+        "cache_hit_tokens": hit,
+        "cache_miss_tokens": miss,
+        "completion_tokens": completion,
+        "prompt_tokens": prompt,
+        "total_tokens": int(u.get("total_tokens") or (prompt + completion)),
+        "estimated_cny": cost,
+    }
+
+
 def stream_direction_report(
     df: pd.DataFrame,
     focus: str,
@@ -467,11 +521,22 @@ def stream_direction_report(
         max_retries=1,
     )
 
-    model = _secret("DEEPSEEK_MODEL", "deepseek-v4-pro")
+    # 快速测试的目标是“验证流程”，不应付出正式研究报告的模型成本。
+    # 正式报告才使用 Pro + 深度思考。
+    if quick:
+        model = _secret("DEEPSEEK_FAST_MODEL", "deepseek-v4-flash")
+        thinking_enabled = False
+    else:
+        model = _secret("DEEPSEEK_MODEL", "deepseek-v4-pro")
+        thinking_enabled = True
 
     yield {
         "type": "stage",
-        "text": f"正在使用 {model} 进行跨专题综合与课题决策分析…",
+        "text": (
+            f"正在使用 {model} "
+            + ("（快速非思考模式）" if quick else "（深度思考模式）")
+            + "进行跨专题综合与课题决策分析…"
+        ),
     }
 
     kwargs = {
@@ -481,23 +546,36 @@ def stream_direction_report(
             {"role": "user", "content": prompt},
         ],
         "stream": True,
-        "extra_body": {"thinking": {"type": "enabled"}},
-        "reasoning_effort": "high",
+        # DeepSeek官方支持在流式最后返回整次请求usage
+        "stream_options": {"include_usage": True},
+        "extra_body": {
+            "thinking": {"type": "enabled" if thinking_enabled else "disabled"}
+        },
     }
 
-    max_tokens = _secret("AI_MAX_OUTPUT_TOKENS", 12000)
+    if thinking_enabled:
+        kwargs["reasoning_effort"] = "high"
+
+    max_tokens = _secret("AI_MAX_OUTPUT_TOKENS", 10000)
     try:
         max_tokens = int(max_tokens)
-        kwargs["max_tokens"] = min(max_tokens, 4200) if quick else max_tokens
+        # 快速测试只验证方向判断与证据链，不生成超长正文
+        kwargs["max_tokens"] = min(max_tokens, 2600) if quick else max_tokens
     except Exception:
-        pass
+        kwargs["max_tokens"] = 2600 if quick else 10000
 
     response = client.chat.completions.create(**kwargs)
 
     reasoning_seen = False
+    final_usage = None
 
     for chunk in response:
-        if not chunk.choices:
+        # include_usage=True 时，最后一个chunk通常没有choices但带usage
+        usage = getattr(chunk, "usage", None)
+        if usage is not None:
+            final_usage = usage
+
+        if not getattr(chunk, "choices", None):
             continue
 
         delta = chunk.choices[0].delta
@@ -518,12 +596,15 @@ def stream_direction_report(
     if source_md:
         yield {"type": "content", "text": source_md}
 
+    usage_summary = record_deepseek_usage(model, final_usage)
+
     yield {
         "type": "done",
         "local_sources": local_sources,
         "evidence_pack": pack,
         "stats": stats,
         "model": model,
+        "usage": usage_summary,
     }
 
 
@@ -738,6 +819,7 @@ def direction_review_page():
     evidence_pack = None
     report_stats = None
     model = ""
+    api_usage = {}
 
     try:
         for event in stream_direction_report(
@@ -768,8 +850,12 @@ def direction_review_page():
                 evidence_pack = event.get("evidence_pack")
                 report_stats = event.get("stats")
                 model = event.get("model", "")
+                api_usage = event.get("usage") or {}
+                cost_text = ""
+                if api_usage:
+                    cost_text = f" · 估算 ¥{api_usage.get('estimated_cny', 0):.4f}"
                 status.update(
-                    label=f"方向决策报告完成 · {model}",
+                    label=f"方向决策报告完成 · {model}{cost_text}",
                     state="complete",
                     expanded=False,
                 )
@@ -788,6 +874,9 @@ def direction_review_page():
             exc,
         )
         return
+
+    if api_usage:
+        render_deepseek_usage(api_usage)
 
     section_title(
         "报告使用建议",
