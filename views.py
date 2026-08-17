@@ -670,133 +670,469 @@ def _orbit_trace(radius, plane="xy", color="rgba(121,145,178,.16)"):
     )
 
 
-def _orbital_graph(chain: pd.DataFrame, top_n=34):
-    chain = _top_chain(chain, top_n)
 
-    sc = chain.groupby("缺陷/应力来源")["文献数"].sum().sort_values(ascending=False)
-    mc = chain.groupby("作用机制")["文献数"].sum().sort_values(ascending=False)
-    oc = chain.groupby("宏观结果")["文献数"].sum().sort_values(ascending=False)
+def _curve_points(p0, p1, lift=.55, inward=.38, n=22):
+    """Quadratic Bézier curve for a smoother research-network edge."""
+    p0 = np.asarray(p0, dtype=float)
+    p1 = np.asarray(p1, dtype=float)
+    mid = (p0 + p1) / 2
+    control = mid * inward
+    direction = p1 - p0
+    dist = float(np.linalg.norm(direction))
+    control[2] += lift + dist * .08
+
+    t = np.linspace(0, 1, n)
+    pts = (
+        ((1 - t) ** 2)[:, None] * p0
+        + (2 * (1 - t) * t)[:, None] * control
+        + (t ** 2)[:, None] * p1
+    )
+    return pts
+
+
+def _constellation_positions(names, radius, z_base=0.0, phase=0.0, y_scale=.82, z_wave=.42):
+    """Deterministic orbital positions with a mild 3D wave."""
+    out = {}
+    n = max(1, len(names))
+    for i, name in enumerate(names):
+        a = phase + 2 * math.pi * i / n
+        x = radius * math.cos(a)
+        y = radius * y_scale * math.sin(a)
+        z = z_base + z_wave * math.sin(2 * a + phase / 2)
+        out[name] = (x, y, z)
+    return out
+
+
+def _orbit_ellipse(radius, z=0.0, phase=0.0, y_scale=.82, color="rgba(120,160,210,.16)"):
+    a = np.linspace(0, 2 * math.pi, 180)
+    x = radius * np.cos(a)
+    y = radius * y_scale * np.sin(a)
+    zz = z + .05 * np.sin(2 * a + phase)
+    return go.Scatter3d(
+        x=x, y=y, z=zz,
+        mode="lines",
+        line=dict(color=color, width=1.4),
+        hoverinfo="skip",
+        showlegend=False,
+    )
+
+
+def _edge_buckets(df, source_col, target_col, positions, source_prefix, target_prefix, max_w, focus=None):
+    """
+    Merge many curved edges into a few traces by strength bucket.
+    This looks richer than straight lines while staying far lighter than
+    one Plotly trace per relation.
+    """
+    palette = {
+        "weak": ("rgba(101,139,196,.18)", 1.2),
+        "medium": ("rgba(82,137,213,.32)", 2.2),
+        "strong": ("rgba(40,181,190,.58)", 3.6),
+        "focus": ("rgba(245,177,79,.95)", 5.2),
+    }
+    groups = {k: {"x": [], "y": [], "z": []} for k in palette}
+
+    for _, r in df.iterrows():
+        w = float(r["文献数"])
+        s = str(r[source_col])
+        t = str(r[target_col])
+        connected = focus is None or focus in {s, t}
+
+        if focus is not None and connected:
+            bucket = "focus"
+        else:
+            ratio = w / max(max_w, 1.0)
+            bucket = "strong" if ratio >= .5 else "medium" if ratio >= .22 else "weak"
+
+        p0 = positions[source_prefix + "|" + s]
+        p1 = positions[target_prefix + "|" + t]
+        pts = _curve_points(
+            p0, p1,
+            lift=.45 if bucket == "weak" else .62 if bucket == "medium" else .78,
+            inward=.44 if source_prefix == "S" else .56,
+            n=20,
+        )
+        groups[bucket]["x"].extend(pts[:, 0].tolist() + [None])
+        groups[bucket]["y"].extend(pts[:, 1].tolist() + [None])
+        groups[bucket]["z"].extend(pts[:, 2].tolist() + [None])
+
+    traces = []
+    for bucket, xyz in groups.items():
+        if not xyz["x"]:
+            continue
+        color, width = palette[bucket]
+        if focus is not None and bucket != "focus":
+            color = color.replace(")", ",") if False else color
+            # dim non-focus lines
+            if bucket == "weak":
+                color = "rgba(82,112,154,.07)"
+            elif bucket == "medium":
+                color = "rgba(82,112,154,.10)"
+            elif bucket == "strong":
+                color = "rgba(82,112,154,.14)"
+        traces.append(
+            go.Scatter3d(
+                x=xyz["x"], y=xyz["y"], z=xyz["z"],
+                mode="lines",
+                line=dict(color=color, width=width),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+    return traces
+
+
+def _orbital_graph(
+    chain: pd.DataFrame,
+    top_n=34,
+    min_evidence=1,
+    focus_layer="全局",
+    focus_node=None,
+    camera_name="透视",
+):
+    """
+    KDP Mechanism Constellation 2.0
+    - three orbital layers
+    - curved evidence paths
+    - evidence-weighted node size
+    - focus mode
+    - hover relationship summaries
+    - dark scientific-instrument presentation
+    """
+    work = chain[chain["文献数"] >= int(min_evidence)].copy()
+    if work.empty:
+        return go.Figure()
+
+    work = _top_chain(work, top_n)
+
+    sc = work.groupby("缺陷/应力来源")["文献数"].sum().sort_values(ascending=False)
+    mc = work.groupby("作用机制")["文献数"].sum().sort_values(ascending=False)
+    oc = work.groupby("宏观结果")["文献数"].sum().sort_values(ascending=False)
+
+    source_pos = _constellation_positions(list(sc.index), 2.15, z_base=.15, phase=.18, y_scale=.76, z_wave=.36)
+    mech_pos = _constellation_positions(list(mc.index), 3.45, z_base=.52, phase=.72, y_scale=.82, z_wave=.52)
+    out_pos = _constellation_positions(list(oc.index), 4.82, z_base=-.28, phase=1.18, y_scale=.88, z_wave=.62)
 
     positions = {"CENTER": (0., 0., 0.)}
-    for n, p in zip(sc.index, _sphere_points(len(sc), 1.55, .1)):
-        positions["S|" + n] = p
-    for n, p in zip(mc.index, _sphere_points(len(mc), 2.95, .9)):
-        positions["M|" + n] = p
-    for n, p in zip(oc.index, _sphere_points(len(oc), 4.25, 1.7)):
-        positions["O|" + n] = p
+    positions.update({"S|" + k: v for k, v in source_pos.items()})
+    positions.update({"M|" + k: v for k, v in mech_pos.items()})
+    positions.update({"O|" + k: v for k, v in out_pos.items()})
+
+    focus = focus_node if focus_layer != "全局" and focus_node else None
+    max_w = max(float(work["文献数"].max()), 1.0)
+
+    # Build connection summaries for hover.
+    sm = (
+        work.groupby(["缺陷/应力来源", "作用机制"], as_index=False)["文献数"]
+        .sum()
+        .sort_values("文献数", ascending=False)
+    )
+    mo = (
+        work.groupby(["作用机制", "宏观结果"], as_index=False)["文献数"]
+        .sum()
+        .sort_values("文献数", ascending=False)
+    )
 
     fig = go.Figure()
 
-    for radius in (1.55, 2.95, 4.25):
-        for plane in ("xy", "xz", "yz"):
-            fig.add_trace(_orbit_trace(radius, plane))
+    # Deep-space particles: one trace, deterministic and lightweight.
+    rng = np.random.default_rng(20260818)
+    stars = rng.normal(0, 1, size=(85, 3))
+    norms = np.linalg.norm(stars, axis=1, keepdims=True)
+    stars = stars / np.where(norms == 0, 1, norms)
+    radii = rng.uniform(4.9, 6.3, size=(85, 1))
+    stars = stars * radii
+    fig.add_trace(
+        go.Scatter3d(
+            x=stars[:, 0], y=stars[:, 1], z=stars[:, 2],
+            mode="markers",
+            marker=dict(size=rng.uniform(1.0, 2.2, 85), color="rgba(180,211,238,.25)"),
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
 
-    max_w = max(chain["文献数"].max(), 1)
+    # Orbital architecture.
+    fig.add_trace(_orbit_ellipse(2.15, .15, color="rgba(230,139,73,.20)"))
+    fig.add_trace(_orbit_ellipse(3.45, .52, phase=.7, color="rgba(112,128,220,.22)"))
+    fig.add_trace(_orbit_ellipse(4.82, -.28, phase=1.2, color="rgba(41,190,190,.21)"))
 
-    # center -> source
+    # Secondary tilted rings to create depth.
+    for radius, z0, color, phase in [
+        (2.15, .15, "rgba(230,139,73,.08)", .5),
+        (3.45, .52, "rgba(112,128,220,.09)", 1.0),
+        (4.82, -.28, "rgba(41,190,190,.08)", 1.6),
+    ]:
+        a = np.linspace(0, 2 * math.pi, 160)
+        fig.add_trace(
+            go.Scatter3d(
+                x=radius * .72 * np.cos(a),
+                y=radius * np.sin(a),
+                z=z0 + .22 * np.sin(a + phase),
+                mode="lines",
+                line=dict(color=color, width=1),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+    # Center-to-source spokes, bucketed into a single trace.
+    cx, cy, cz = [], [], []
     for n, w in sc.items():
-        x0, y0, z0 = positions["CENTER"]
-        x1, y1, z1 = positions["S|" + n]
-        fig.add_trace(
-            go.Scatter3d(
-                x=[x0, x1], y=[y0, y1], z=[z0, z1],
-                mode="lines",
-                line=dict(color=_rgba(COLORS["orange"], .22), width=1.3 + 3.5*math.sqrt(w/max_w)),
-                hoverinfo="skip",
-                showlegend=False,
-            )
+        p1 = positions["S|" + n]
+        pts = _curve_points((0, 0, 0), p1, lift=.20, inward=.65, n=18)
+        cx.extend(pts[:, 0].tolist() + [None])
+        cy.extend(pts[:, 1].tolist() + [None])
+        cz.extend(pts[:, 2].tolist() + [None])
+    fig.add_trace(
+        go.Scatter3d(
+            x=cx, y=cy, z=cz,
+            mode="lines",
+            line=dict(color="rgba(229,139,73,.14)", width=1.4),
+            hoverinfo="skip",
+            showlegend=False,
         )
+    )
 
-    sm = chain.groupby(["缺陷/应力来源", "作用机制"], as_index=False)["文献数"].sum()
-    for _, r in sm.iterrows():
-        x0, y0, z0 = positions["S|" + r["缺陷/应力来源"]]
-        x1, y1, z1 = positions["M|" + r["作用机制"]]
-        fig.add_trace(
-            go.Scatter3d(
-                x=[x0, x1], y=[y0, y1], z=[z0, z1],
-                mode="lines",
-                line=dict(color="rgba(141,124,255,.25)", width=1 + 3*math.sqrt(r["文献数"]/max_w)),
-                hoverinfo="skip",
-                showlegend=False,
+    # Curved evidence paths.
+    for tr in _edge_buckets(
+        sm, "缺陷/应力来源", "作用机制",
+        positions, "S", "M", max_w, focus=focus
+    ):
+        fig.add_trace(tr)
+
+    for tr in _edge_buckets(
+        mo, "作用机制", "宏观结果",
+        positions, "M", "O", max_w, focus=focus
+    ):
+        fig.add_trace(tr)
+
+    # Determine related nodes for focus mode.
+    related_sources = set(sc.index)
+    related_mechs = set(mc.index)
+    related_outcomes = set(oc.index)
+
+    if focus:
+        if focus_layer == "缺陷/应力来源":
+            related_sources = {focus}
+            related_mechs = set(work.loc[work["缺陷/应力来源"] == focus, "作用机制"])
+            related_outcomes = set(
+                work.loc[work["作用机制"].isin(related_mechs), "宏观结果"]
             )
-        )
-
-    mo = chain.groupby(["作用机制", "宏观结果"], as_index=False)["文献数"].sum()
-    for _, r in mo.iterrows():
-        x0, y0, z0 = positions["M|" + r["作用机制"]]
-        x1, y1, z1 = positions["O|" + r["宏观结果"]]
-        fig.add_trace(
-            go.Scatter3d(
-                x=[x0, x1], y=[y0, y1], z=[z0, z1],
-                mode="lines",
-                line=dict(color="rgba(29,190,207,.22)", width=1 + 3*math.sqrt(r["文献数"]/max_w)),
-                hoverinfo="skip",
-                showlegend=False,
+        elif focus_layer == "作用机制":
+            related_mechs = {focus}
+            related_sources = set(work.loc[work["作用机制"] == focus, "缺陷/应力来源"])
+            related_outcomes = set(work.loc[work["作用机制"] == focus, "宏观结果"])
+        elif focus_layer == "宏观结果":
+            related_outcomes = {focus}
+            related_mechs = set(work.loc[work["宏观结果"] == focus, "作用机制"])
+            related_sources = set(
+                work.loc[work["作用机制"].isin(related_mechs), "缺陷/应力来源"]
             )
-        )
 
-    def add_nodes(names, counts, prefix, color, layer):
-        xs, ys, zs, hover, size = [], [], [], [], []
-        mx = max(counts.max(), 1)
+    def add_layer_nodes(names, counts, prefix, base_color, layer_name, related_set, top_labels=4):
+        names = list(names)
+        max_count = max(float(counts.max()), 1.0)
+
+        xs, ys, zs, sizes, colors, opacities, hover, labels = [], [], [], [], [], [], [], []
+        top_names = set(counts.head(top_labels).index)
+
         for n in names:
             x, y, z = positions[prefix + "|" + n]
+            c = float(counts[n])
+            is_related = n in related_set
+            node_opacity = .98 if is_related else .16
+            node_color = base_color if is_related else "#526071"
+            size = 12 + 18 * math.sqrt(c / max_count)
+
+            # top connected relation snippets
+            if prefix == "S":
+                rel = sm[sm["缺陷/应力来源"] == n].head(3)
+                snippets = [
+                    f"{r['作用机制']} · {int(r['文献数'])}篇"
+                    for _, r in rel.iterrows()
+                ]
+            elif prefix == "M":
+                a = sm[sm["作用机制"] == n].head(2)
+                b = mo[mo["作用机制"] == n].head(2)
+                snippets = [
+                    f"← {r['缺陷/应力来源']} · {int(r['文献数'])}篇"
+                    for _, r in a.iterrows()
+                ] + [
+                    f"→ {r['宏观结果']} · {int(r['文献数'])}篇"
+                    for _, r in b.iterrows()
+                ]
+            else:
+                rel = mo[mo["宏观结果"] == n].head(3)
+                snippets = [
+                    f"{r['作用机制']} · {int(r['文献数'])}篇"
+                    for _, r in rel.iterrows()
+                ]
+
             xs.append(x); ys.append(y); zs.append(z)
-            hover.append(f"<b>{n}</b><br>{layer}<br>关联文献 {int(counts[n])} 篇")
-            size.append(10 + 18*math.sqrt(counts[n]/mx))
+            sizes.append(size)
+            colors.append(node_color)
+            opacities.append(node_opacity)
+            labels.append(n if (n in top_names or n == focus) else "")
+            hover.append(
+                f"<b>{n}</b>"
+                f"<br><span style='color:#A7B9CC'>{layer_name}</span>"
+                f"<br>累计关系文献：<b>{int(c)}</b> 篇"
+                + ("<br>" + "<br>".join(snippets) if snippets else "")
+                + ("<br><b>当前聚焦路径</b>" if n == focus else "")
+            )
 
-        # glow
+        # halo
         fig.add_trace(
             go.Scatter3d(
-                x=xs, y=ys, z=zs, mode="markers",
-                marker=dict(size=[s*1.55 for s in size], color=_rgba(color, .09), line=dict(width=0)),
-                hoverinfo="skip", showlegend=False,
-            )
-        )
-        fig.add_trace(
-            go.Scatter3d(
-                x=xs, y=ys, z=zs, mode="markers",
-                marker=dict(size=size, color=color, opacity=.96, line=dict(color="rgba(255,255,255,.8)", width=.8)),
-                hovertext=hover, hoverinfo="text",
-                name=layer,
+                x=xs, y=ys, z=zs,
+                mode="markers",
+                marker=dict(
+                    size=[s * 1.65 for s in sizes],
+                    color=base_color,
+                    opacity=.07 if focus is None else .045,
+                    line=dict(width=0),
+                ),
+                hoverinfo="skip",
+                showlegend=False,
             )
         )
 
+        fig.add_trace(
+            go.Scatter3d(
+                x=xs, y=ys, z=zs,
+                mode="markers+text",
+                text=labels,
+                textposition="top center",
+                textfont=dict(color="#D9E7F6", size=10),
+                marker=dict(
+                    size=sizes,
+                    color=colors,
+                    opacity=opacities,
+                    line=dict(color="rgba(255,255,255,.78)", width=.8),
+                ),
+                hovertext=hover,
+                hoverinfo="text",
+                name=layer_name,
+            )
+        )
+
+    # Center halo layers.
+    fig.add_trace(
+        go.Scatter3d(
+            x=[0], y=[0], z=[0], mode="markers",
+            marker=dict(size=68, color="rgba(25,150,177,.08)", line=dict(width=0)),
+            hoverinfo="skip", showlegend=False,
+        )
+    )
+    fig.add_trace(
+        go.Scatter3d(
+            x=[0], y=[0], z=[0], mode="markers",
+            marker=dict(size=48, color="rgba(35,126,191,.22)", line=dict(width=0)),
+            hoverinfo="skip", showlegend=False,
+        )
+    )
     fig.add_trace(
         go.Scatter3d(
             x=[0], y=[0], z=[0],
             mode="markers+text",
             text=["KDP"],
-            textposition="top center",
-            marker=dict(size=34, color="#F5A55B", line=dict(color="white", width=1.4)),
-            textfont=dict(color="#F3F7FB", size=13),
-            hovertext=["KDP 晶体缺陷与开裂研究中心"],
+            textposition="middle center",
+            marker=dict(
+                size=31,
+                color="#1A89B3",
+                line=dict(color="#EAF6FF", width=1.4),
+            ),
+            textfont=dict(color="white", size=13),
+            hovertext=[
+                "<b>KDP Research Core</b><br>"
+                "缺陷来源 → 局部机制 → 宏观后果<br>"
+                f"当前显示关系文献 {int(work['文献数'].sum())} 篇"
+            ],
             hoverinfo="text",
-            name="研究中心",
+            name="KDP研究核心",
         )
     )
 
-    add_nodes(list(sc.index), sc, "S", "#E87755", "缺陷 / 应力来源")
-    add_nodes(list(mc.index), mc, "M", "#6379D6", "局部机制")
-    add_nodes(list(oc.index), oc, "O", "#20B6B0", "宏观后果")
+    add_layer_nodes(sc.index, sc, "S", "#E8913F", "缺陷 / 应力来源", related_sources)
+    add_layer_nodes(mc.index, mc, "M", "#7683E2", "局部作用机制", related_mechs)
+    add_layer_nodes(oc.index, oc, "O", "#28B5B8", "宏观结果", related_outcomes)
+
+    # Orbital labels in 3D space.
+    layer_labels = [
+        (-2.55, -1.45, 1.10, "LAYER 01  ·  DEFECT / STRESS"),
+        (2.65, 2.15, 1.45, "LAYER 02  ·  MECHANISM"),
+        (-4.65, 2.35, -.55, "LAYER 03  ·  OUTCOME"),
+    ]
+    fig.add_trace(
+        go.Scatter3d(
+            x=[p[0] for p in layer_labels],
+            y=[p[1] for p in layer_labels],
+            z=[p[2] for p in layer_labels],
+            mode="text",
+            text=[p[3] for p in layer_labels],
+            textfont=dict(color="rgba(175,196,218,.62)", size=9),
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+
+    cameras = {
+        "透视": dict(eye=dict(x=1.46, y=1.62, z=1.12), center=dict(x=0, y=0, z=.02)),
+        "俯视": dict(eye=dict(x=.08, y=.08, z=2.55), center=dict(x=0, y=0, z=0)),
+        "侧视": dict(eye=dict(x=2.55, y=.10, z=.32), center=dict(x=0, y=0, z=.05)),
+    }
+
+    focus_label = focus or "GLOBAL"
 
     fig.update_layout(
-        paper_bgcolor="#07111E",
-        plot_bgcolor="#07111E",
-        margin=dict(l=0, r=0, t=20, b=0),
+        paper_bgcolor="#06101D",
+        plot_bgcolor="#06101D",
+        margin=dict(l=0, r=0, t=58, b=0),
         legend=dict(
-            orientation="h", y=1.02, x=.02,
-            bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#B8C6D8", size=11),
+            orientation="h",
+            y=1.035,
+            x=.02,
+            bgcolor="rgba(4,12,22,.45)",
+            bordercolor="rgba(169,198,226,.12)",
+            borderwidth=1,
+            font=dict(color="#C8D6E6", size=10),
         ),
         scene=dict(
-            bgcolor="#07111E",
+            bgcolor="#06101D",
             xaxis=dict(visible=False),
             yaxis=dict(visible=False),
             zaxis=dict(visible=False),
             aspectmode="cube",
-            camera=dict(eye=dict(x=1.35, y=1.55, z=1.12)),
+            camera=cameras.get(camera_name, cameras["透视"]),
+            dragmode="orbit",
         ),
         font=dict(family='Inter,"Microsoft YaHei"', color="#DDE7F4"),
+        annotations=[
+            dict(
+                x=.015, y=.985, xref="paper", yref="paper",
+                showarrow=False, align="left",
+                text=(
+                    "<b>KDP MECHANISM CONSTELLATION</b>"
+                    f"<br><span style='font-size:10px;color:#86A0B8'>FOCUS · {focus_label}</span>"
+                ),
+                font=dict(color="#DDEAF7", size=12),
+                bgcolor="rgba(8,20,35,.58)",
+                bordercolor="rgba(122,159,194,.16)",
+                borderpad=8,
+            ),
+            dict(
+                x=.985, y=.985, xref="paper", yref="paper",
+                showarrow=False, align="right",
+                text=(
+                    f"<b>{len(sc)+len(mc)+len(oc)+1}</b> NODES"
+                    f" · <b>{len(sm)+len(mo)}</b> LINKS"
+                    f" · <b>{int(work['文献数'].sum())}</b> EVIDENCE"
+                ),
+                font=dict(color="#91ABC2", size=10),
+                bgcolor="rgba(8,20,35,.42)",
+                borderpad=6,
+            ),
+        ],
     )
     return fig
 
@@ -913,40 +1249,173 @@ def knowledge_graph():
         return
 
     if section == "3D关系星图":
-        left, right = st.columns([1, 1.2])
-        with left:
-            relation_limit = st.slider(
-                "星图保留关系数",
-                12,
-                min(50, len(chain)),
-                min(28, len(chain)),
-                key="kg_3d_limit",
-            )
-        with right:
-            soft_note(
-                "3D视图按需加载，不再随知识图谱页面自动生成。"
-                "来源、机制和后果分布在三层轨道中，悬停查看节点信息。"
+        section_title(
+            "KDP三维机制星图",
+            "用三层轨道表达“缺陷/应力来源 → 局部机制 → 宏观结果”，节点大小代表关系证据量，曲线强度代表当前文献库中的关系厚度",
+        )
+
+        c1, c2, c3, c4 = st.columns([1.05, .9, 1.05, .95])
+        relation_limit = c1.slider(
+            "显示关系数",
+            14,
+            min(60, len(chain)),
+            min(34, len(chain)),
+            key="kg_3d_limit",
+        )
+
+        max_evidence = max(1, int(chain["文献数"].max()))
+        min_evidence = c2.slider(
+            "最低关系证据",
+            1,
+            min(12, max_evidence),
+            1,
+            key="kg_3d_min_evidence",
+        )
+
+        focus_layer = c3.selectbox(
+            "聚焦层",
+            ["全局", "缺陷/应力来源", "作用机制", "宏观结果"],
+            key="kg_3d_focus_layer",
+        )
+
+        camera_name = c4.selectbox(
+            "视角",
+            ["透视", "俯视", "侧视"],
+            key="kg_3d_camera",
+        )
+
+        focus_node = None
+        if focus_layer != "全局":
+            if focus_layer == "缺陷/应力来源":
+                counts = (
+                    chain.groupby("缺陷/应力来源")["文献数"]
+                    .sum().sort_values(ascending=False)
+                )
+            elif focus_layer == "作用机制":
+                counts = (
+                    chain.groupby("作用机制")["文献数"]
+                    .sum().sort_values(ascending=False)
+                )
+            else:
+                counts = (
+                    chain.groupby("宏观结果")["文献数"]
+                    .sum().sort_values(ascending=False)
+                )
+            focus_node = st.selectbox(
+                "聚焦节点",
+                list(counts.index),
+                key="kg_3d_focus_node",
             )
 
-        # Explicit load gate: moving between modules no longer pays the WebGL cost.
-        sig = f"{scope}|{hide_uncertain}|{relation_limit}|{int(chain['文献数'].sum())}|{len(chain)}"
-        if st.session_state.get("_kg_3d_loaded_sig") != sig:
-            st.info("3D星图属于高负载交互视图。点击后才生成，普通模块切换不会再自动加载它。")
-            if not st.button("加载3D关系星图", type="primary", key="kg_load_3d"):
+        legend = pd.DataFrame(
+            [
+                ["缺陷 / 应力来源", "橙色轨道", "材料内部或工艺引入的起因"],
+                ["局部作用机制", "紫蓝轨道", "电子、结构、应力、散射等中间机制"],
+                ["宏观结果", "青绿轨道", "开裂、吸收、LIDT、散射等可观测后果"],
+                ["节点大小", "证据量", "节点累计关联文献越多，尺寸越大"],
+                ["曲线强度", "关系厚度", "两类节点共现/关联文献越多，连线越亮"],
+            ],
+            columns=["图谱元素", "编码方式", "科研含义"],
+        )
+
+        with st.expander("图谱读法", expanded=False):
+            st.dataframe(legend, width="stretch", hide_index=True)
+
+        # Load only when user explicitly enters the heavy visualization.
+        if not st.session_state.get("_kg_3d_enabled", False):
+            st.info(
+                "三维机制星图采用按需加载。点击一次后，本次会话内可以继续切换聚焦节点、证据阈值和视角。"
+            )
+            if not st.button("进入三维机制星图", type="primary", key="kg_enable_3d"):
                 return
-            st.session_state["_kg_3d_loaded_sig"] = sig
+            st.session_state["_kg_3d_enabled"] = True
 
-        with st.spinner("正在生成3D关系星图…"):
-            fig = _orbital_graph(chain, top_n=relation_limit)
+        filtered = chain[chain["文献数"] >= min_evidence].copy()
+        if filtered.empty:
+            st.warning("当前证据阈值下没有可显示的关系。")
+            return
+
+        with st.spinner("正在构建三维机制星图…"):
+            fig = _orbital_graph(
+                filtered,
+                top_n=relation_limit,
+                min_evidence=min_evidence,
+                focus_layer=focus_layer,
+                focus_node=focus_node,
+                camera_name=camera_name,
+            )
 
         st.plotly_chart(
             fig,
             width="stretch",
             theme=None,
-            height=760,
-            config={"displaylogo": False, "scrollZoom": True},
-            key=f"kg_3d_{relation_limit}",
+            height=820,
+            config={
+                "displaylogo": False,
+                "scrollZoom": True,
+                "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+                "toImageButtonOptions": {
+                    "format": "png",
+                    "filename": "KDP_三维机制星图",
+                    "scale": 2,
+                },
+            },
+            key=f"kg_3d_{relation_limit}_{min_evidence}_{focus_layer}_{focus_node}_{camera_name}",
         )
+
+        # Relationship details: the 3D view is an entry point, not a dead-end.
+        if focus_node:
+            if focus_layer == "缺陷/应力来源":
+                detail = filtered[filtered["缺陷/应力来源"] == focus_node].copy()
+            elif focus_layer == "作用机制":
+                detail = filtered[filtered["作用机制"] == focus_node].copy()
+            else:
+                detail = filtered[filtered["宏观结果"] == focus_node].copy()
+
+            detail = detail.sort_values("文献数", ascending=False).head(18)
+            section_title(
+                f"聚焦关系｜{focus_node}",
+                "3D星图中的聚焦节点对应到具体研究路径，便于继续回查文献和设计验证方案",
+            )
+            if len(detail):
+                detail["研究路径"] = (
+                    detail["缺陷/应力来源"]
+                    + " → "
+                    + detail["作用机制"]
+                    + " → "
+                    + detail["宏观结果"]
+                )
+                st.dataframe(
+                    detail[["研究路径", "文献数"]],
+                    width="stretch",
+                    hide_index=True,
+                    height=min(520, 80 + 38 * len(detail)),
+                )
+
+                focus_query = f"{focus_node} KDP mechanism"
+                st.caption(
+                    f"下一步可进入“文献中心/专题调研”继续检索：{focus_query}"
+                )
+        else:
+            strongest = filtered.sort_values("文献数", ascending=False).head(12).copy()
+            strongest["研究路径"] = (
+                strongest["缺陷/应力来源"]
+                + " → "
+                + strongest["作用机制"]
+                + " → "
+                + strongest["宏观结果"]
+            )
+            section_title(
+                "当前最强研究路径",
+                "作为3D图谱的定量补充，避免视觉展示脱离具体证据规模",
+            )
+            st.dataframe(
+                strongest[["研究路径", "文献数"]],
+                width="stretch",
+                hide_index=True,
+                height=500,
+            )
+
         return
 
     # 分类与关系

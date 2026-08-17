@@ -85,11 +85,40 @@ def home_page():
     display:flex;flex-wrap:wrap;gap:9px;
 }
 .home-chip{
+    display:inline-flex;align-items:center;gap:7px;
     padding:8px 12px;border-radius:10px;
     background:rgba(255,255,255,.78);
     border:1px solid rgba(19,89,166,.12);
     color:#36526E;font-size:12px;font-weight:700;
+    text-decoration:none!important;
+    transition:all .18s ease;
 }
+.home-chip:hover{
+    transform:translateY(-2px);
+    border-color:rgba(19,89,166,.28);
+    box-shadow:0 8px 20px rgba(19,89,166,.09);
+    color:#1359A6!important;
+}
+.home-cta-row{
+    position:relative;z-index:4;
+    display:flex;flex-wrap:wrap;gap:10px;margin-top:22px;
+}
+.home-cta{
+    display:inline-flex;align-items:center;gap:8px;
+    padding:11px 15px;border-radius:11px;
+    font-size:12px;font-weight:820;text-decoration:none!important;
+    transition:all .18s ease;
+}
+.home-cta-primary{
+    color:#fff!important;
+    background:linear-gradient(135deg,#1359A6,#0E8EA0);
+    box-shadow:0 10px 24px rgba(19,89,166,.20);
+}
+.home-cta-secondary{
+    color:#173650!important;background:rgba(255,255,255,.82);
+    border:1px solid rgba(19,89,166,.15);
+}
+.home-cta:hover{transform:translateY(-2px);filter:brightness(1.02)}
 .home-orbit{
     position:absolute;right:34px;top:34px;
     width:410px;height:410px;opacity:.95;
@@ -128,7 +157,11 @@ def home_page():
     border:1px solid rgba(19,89,166,.12);
     border-radius:18px;overflow:hidden;background:rgba(255,255,255,.72)
 }
-.home-project-cell{padding:17px 20px;border-right:1px solid rgba(19,89,166,.09)}
+.home-project-cell{
+    display:block;padding:17px 20px;border-right:1px solid rgba(19,89,166,.09);
+    text-decoration:none!important;transition:background .16s ease,transform .16s ease
+}
+.home-project-cell:hover{background:rgba(19,89,166,.045);transform:translateY(-1px)}
 .home-project-cell:last-child{border-right:none}
 .home-project-label{font-size:10px;letter-spacing:.12em;font-weight:800;color:#7B8EA2}
 .home-project-value{margin-top:5px;font-size:20px;font-weight:820;color:#173650}
@@ -137,16 +170,27 @@ def home_page():
     display:grid;grid-template-columns:repeat(6,1fr);gap:0;margin:12px 0 28px;
     border:1px solid rgba(19,89,166,.12);border-radius:20px;overflow:hidden;background:white
 }
-.home-flow-step{position:relative;padding:22px 17px;min-height:118px;border-right:1px solid rgba(19,89,166,.09)}
+.home-flow-step{
+    position:relative;display:block;padding:22px 17px;min-height:118px;
+    border-right:1px solid rgba(19,89,166,.09);text-decoration:none!important;
+    transition:all .18s ease
+}
+.home-flow-step:hover{background:linear-gradient(180deg,rgba(19,89,166,.035),rgba(14,154,167,.025));transform:translateY(-2px)}
 .home-flow-step:last-child{border-right:none}
 .home-flow-num{font-size:10px;font-weight:900;letter-spacing:.1em;color:#99A9B8}
 .home-flow-title{margin-top:13px;font-size:15px;font-weight:850;color:#173650}
 .home-flow-note{margin-top:6px;font-size:11px;line-height:1.55;color:#75879A}
 .home-route-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
 .home-route{
-    padding:24px 22px;border-radius:18px;background:#FFF;
+    display:block;padding:24px 22px;border-radius:18px;background:#FFF;
     border:1px solid rgba(19,89,166,.11);
-    box-shadow:0 8px 24px rgba(31,68,103,.045)
+    box-shadow:0 8px 24px rgba(31,68,103,.045);
+    text-decoration:none!important;transition:all .2s ease
+}
+.home-route:hover{
+    transform:translateY(-4px);
+    border-color:rgba(19,89,166,.24);
+    box-shadow:0 16px 34px rgba(31,68,103,.09)
 }
 .home-route-id{font-size:10px;font-weight:850;letter-spacing:.14em;color:#1359A6}
 .home-route-title{margin-top:11px;font-size:18px;font-weight:850;color:#173650}
@@ -159,6 +203,22 @@ def home_page():
 .home-engine-title{font-size:22px;font-weight:850}
 .home-engine-note{margin-top:7px;color:rgba(255,255,255,.74);font-size:13px;line-height:1.7;max-width:900px}
 .home-engine-mark{font-size:42px;font-weight:900;letter-spacing:.06em;opacity:.18}
+.home-start{
+    margin:22px 0 12px;padding:24px 26px;border-radius:20px;
+    border:1px solid rgba(19,89,166,.12);
+    background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(241,247,251,.92));
+    display:grid;grid-template-columns:1.3fr 2fr;gap:26px;align-items:center
+}
+.home-start-kicker{font-size:10px;font-weight:900;letter-spacing:.14em;color:#0E9AA7}
+.home-start-title{margin-top:7px;font-size:22px;font-weight:880;color:#173650}
+.home-start-note{margin-top:7px;font-size:12px;line-height:1.7;color:#74879B}
+.home-start-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.home-start-link{
+    display:block;padding:13px 14px;border-radius:12px;background:#fff;
+    border:1px solid rgba(19,89,166,.11);text-decoration:none!important;
+    color:#36526E!important;font-size:12px;font-weight:780;transition:all .18s ease
+}
+.home-start-link:hover{transform:translateY(-2px);border-color:rgba(19,89,166,.25);color:#1359A6!important}
 @media (max-width:1200px){
     .home-title{font-size:45px;max-width:700px}
     .home-orbit{right:-55px;opacity:.5}
@@ -181,11 +241,16 @@ def home_page():
     理论计算与AI分析组织为连续、可追溯的研究流程。
   </div>
   <div class="home-logic">
-    <span class="home-chip">Evidence 文献证据</span>
-    <span class="home-chip">Hypothesis 科学假设</span>
-    <span class="home-chip">Experiment 实验验证</span>
-    <span class="home-chip">Computation 理论计算</span>
-    <span class="home-chip">Decision 研究决策</span>
+    <a class="home-chip" href="/literature" target="_self">Evidence · 文献证据 ↗</a>
+    <a class="home-chip" href="/project" target="_self">Hypothesis · 科学假设 ↗</a>
+    <a class="home-chip" href="/experiment-log" target="_self">Experiment · 实验验证 ↗</a>
+    <a class="home-chip" href="/theory" target="_self">Computation · 理论计算 ↗</a>
+    <a class="home-chip" href="/direction" target="_self">Decision · 研究决策 ↗</a>
+  </div>
+  <div class="home-cta-row">
+    <a class="home-cta home-cta-primary" href="/overview" target="_self">进入科研驾驶舱 →</a>
+    <a class="home-cta home-cta-secondary" href="/project" target="_self">打开研究总控台</a>
+    <a class="home-cta home-cta-secondary" href="/ai" target="_self">进入AI科研助手</a>
   </div>
   <div class="home-orbit">
     <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
@@ -196,31 +261,31 @@ def home_page():
   </div>
 </div>
 <div class="home-project-bar">
-  <div class="home-project-cell">
+  <a class="home-project-cell" href="/project" target="_self">
     <div class="home-project-label">ACTIVE PROJECT</div>
     <div class="home-project-value">{project_name}</div>
-    <div class="home-project-note">状态：{project_status}</div>
-  </div>
-  <div class="home-project-cell">
+    <div class="home-project-note">状态：{project_status} · 打开项目 →</div>
+  </a>
+  <a class="home-project-cell" href="/literature" target="_self">
     <div class="home-project-label">EVIDENCE</div>
     <div class="home-project-value">{counts["evidence"]}</div>
-    <div class="home-project-note">项目证据</div>
-  </div>
-  <div class="home-project-cell">
+    <div class="home-project-note">项目证据 · 查看 →</div>
+  </a>
+  <a class="home-project-cell" href="/project" target="_self">
     <div class="home-project-label">HYPOTHESES</div>
     <div class="home-project-value">{counts["hypothesis"]}</div>
-    <div class="home-project-note">科学假设</div>
-  </div>
-  <div class="home-project-cell">
+    <div class="home-project-note">科学假设 · 管理 →</div>
+  </a>
+  <a class="home-project-cell" href="/experiment-log" target="_self">
     <div class="home-project-label">EXPERIMENTS</div>
     <div class="home-project-value">{counts["experiment"]}</div>
-    <div class="home-project-note">受保护实验索引</div>
-  </div>
-  <div class="home-project-cell">
+    <div class="home-project-note">受保护实验 · 进入 →</div>
+  </a>
+  <a class="home-project-cell" href="/theory" target="_self">
     <div class="home-project-label">COMPUTATION</div>
     <div class="home-project-value">{counts["calculation"]}</div>
-    <div class="home-project-note">计算任务 / 结果</div>
-  </div>
+    <div class="home-project-note">计算任务 / 结果 · 查看 →</div>
+  </a>
 </div>
         """,
         unsafe_allow_html=True,
@@ -233,12 +298,12 @@ def home_page():
     st.markdown(
         """
 <div class="home-flow">
-  <div class="home-flow-step"><div class="home-flow-num">01 · EVIDENCE</div><div class="home-flow-title">文献证据</div><div class="home-flow-note">核心论文、方法依据、共识与争议</div></div>
-  <div class="home-flow-step"><div class="home-flow-num">02 · HYPOTHESIS</div><div class="home-flow-title">科学假设</div><div class="home-flow-note">形成可验证、可否证的机制问题</div></div>
-  <div class="home-flow-step"><div class="home-flow-num">03 · EXPERIMENT</div><div class="home-flow-title">实验验证</div><div class="home-flow-note">记录条件、现象、失败与对照结果</div></div>
-  <div class="home-flow-step"><div class="home-flow-num">04 · COMPUTATION</div><div class="home-flow-title">理论验证</div><div class="home-flow-note">DFT / MD / FEA与专业求解器衔接</div></div>
-  <div class="home-flow-step"><div class="home-flow-num">05 · AI SYNTHESIS</div><div class="home-flow-title">AI综合分析</div><div class="home-flow-note">调用项目记忆，整合证据与研究状态</div></div>
-  <div class="home-flow-step"><div class="home-flow-num">06 · DECISION</div><div class="home-flow-title">下一步决策</div><div class="home-flow-note">课题、实验、表征和计算继续迭代</div></div>
+  <a class="home-flow-step" href="/literature" target="_self"><div class="home-flow-num">01 · EVIDENCE</div><div class="home-flow-title">文献证据</div><div class="home-flow-note">核心论文、方法依据、共识与争议 · 进入 →</div></a>
+  <a class="home-flow-step" href="/project" target="_self"><div class="home-flow-num">02 · HYPOTHESIS</div><div class="home-flow-title">科学假设</div><div class="home-flow-note">形成可验证、可否证的机制问题 · 管理 →</div></a>
+  <a class="home-flow-step" href="/experiment-log" target="_self"><div class="home-flow-num">03 · EXPERIMENT</div><div class="home-flow-title">实验验证</div><div class="home-flow-note">记录条件、现象、失败与对照结果 · 进入 →</div></a>
+  <a class="home-flow-step" href="/theory" target="_self"><div class="home-flow-num">04 · COMPUTATION</div><div class="home-flow-title">理论验证</div><div class="home-flow-note">DFT / MD / FEA与专业求解器衔接 · 进入 →</div></a>
+  <a class="home-flow-step" href="/ai" target="_self"><div class="home-flow-num">05 · AI SYNTHESIS</div><div class="home-flow-title">AI综合分析</div><div class="home-flow-note">调用项目记忆，整合证据与研究状态 · 进入 →</div></a>
+  <a class="home-flow-step" href="/direction" target="_self"><div class="home-flow-num">06 · DECISION</div><div class="home-flow-title">下一步决策</div><div class="home-flow-note">课题、实验、表征和计算继续迭代 · 进入 →</div></a>
 </div>
         """,
         unsafe_allow_html=True,
@@ -251,14 +316,35 @@ def home_page():
     st.markdown(
         """
 <div class="home-route-grid">
-  <div class="home-route"><div class="home-route-id">PATH 01</div><div class="home-route-title">领域与选题</div><div class="home-route-note">文献中心 → 专题调研 → 潜在研究空白 → 研究方向决策</div></div>
-  <div class="home-route"><div class="home-route-id">PATH 02</div><div class="home-route-title">开裂与实验</div><div class="home-route-note">实验现象 → 开裂诊断 → 历史实验 → 对照实验设计 → 结果回填</div></div>
-  <div class="home-route"><div class="home-route-id">PATH 03</div><div class="home-route-title">机理与计算</div><div class="home-route-note">科学假设 → 方法文献 → DFT / MD / FEA规划 → 外部求解 → 结果验证</div></div>
-  <div class="home-route"><div class="home-route-id">PATH 04</div><div class="home-route-title">数据驱动</div><div class="home-route-note">真实实验积累 → 数据质量 → 统计规律 → 机器学习 → 条件优化</div></div>
+  <a class="home-route" href="/direction" target="_self"><div class="home-route-id">PATH 01 · OPEN</div><div class="home-route-title">领域与选题</div><div class="home-route-note">文献中心 → 专题调研 → 潜在研究空白 → 研究方向决策</div></a>
+  <a class="home-route" href="/diagnosis" target="_self"><div class="home-route-id">PATH 02 · OPEN</div><div class="home-route-title">开裂与实验</div><div class="home-route-note">实验现象 → 开裂诊断 → 历史实验 → 对照实验设计 → 结果回填</div></a>
+  <a class="home-route" href="/theory" target="_self"><div class="home-route-id">PATH 03 · OPEN</div><div class="home-route-title">机理与计算</div><div class="home-route-note">科学假设 → 方法文献 → DFT / MD / FEA规划 → 外部求解 → 结果验证</div></a>
+  <a class="home-route" href="/experiment-log" target="_self"><div class="home-route-id">PATH 04 · OPEN</div><div class="home-route-title">数据驱动</div><div class="home-route-note">真实实验积累 → 数据质量 → 统计规律 → 机器学习 → 条件优化</div></a>
 </div>
         """,
         unsafe_allow_html=True,
     )
+
+    st.markdown(
+        f"""
+<div class="home-start">
+  <div>
+    <div class="home-start-kicker">START HERE</div>
+    <div class="home-start-title">{'开始建立研究链' if sum(counts.values()) == 0 else '继续当前研究项目'}</div>
+    <div class="home-start-note">
+      {'当前项目尚未沉淀证据、假设、实验或计算任务。建议先从一条核心文献或一组实验记录开始。' if sum(counts.values()) == 0 else '系统已经记录了当前项目的研究上下文，可以直接从已有证据、实验或AI分析继续推进。'}
+    </div>
+  </div>
+  <div class="home-start-actions">
+    <a class="home-start-link" href="/literature" target="_self">① 添加核心文献证据 →</a>
+    <a class="home-start-link" href="/experiment-log" target="_self">② 记录一组真实实验 →</a>
+    <a class="home-start-link" href="/ai" target="_self">③ 让AI读取项目上下文 →</a>
+  </div>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
     st.markdown(
         """
@@ -277,5 +363,5 @@ def home_page():
     )
 
     st.caption(
-        "从左侧导航进入科研驾驶舱、研究总控台、文献中心、实验记录、理论计算或AI科研助手。"
+        "首页中的研究链、路径卡片和项目状态均可直接跳转到对应科研模块。"
     )
