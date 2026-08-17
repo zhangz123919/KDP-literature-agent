@@ -84,7 +84,7 @@ def _build_evidence_pack(
 
         if len(d):
             d = d.sort_values(
-                ["V5科研优先分", "被引次数", "年份"],
+                ["V5核心排序分", "证据完整度分", "V5科研优先分", "被引次数", "年份"],
                 ascending=False,
             ).head(per_topic)
             d["_方向专题"] = topic
@@ -111,7 +111,7 @@ def _build_evidence_pack(
     pack = pack.assign(_dedupe_key=dedupe_key).drop_duplicates("_dedupe_key")
 
     pack = pack.sort_values(
-        ["V5科研优先分", "被引次数", "年份"],
+        ["V5核心排序分", "证据完整度分", "V5科研优先分", "被引次数", "年份"],
         ascending=False,
     ).head(max_total)
 
@@ -159,6 +159,9 @@ def _evidence_context(pack: pd.DataFrame, maxp: int = 48) -> Tuple[str, List[Dic
             f"期刊：{_clean(r.get('期刊',''))}\n"
             f"DOI：{_clean(r.get('DOI',''))}\n"
             f"等级：{_clean(r.get('V5推荐等级',''))}\n"
+            f"核心角色：{_clean(r.get('核心证据层级','—'))}\n"
+            f"证据完整度：{r.get('证据完整度分','')} / 100（{_clean(r.get('证据完整度状态',''))}）\n"
+            f"证据角色：{_clean(r.get('证据角色',''))}\n"
             f"分类：{_clean(r.get('详细二级分类',''))}\n"
             f"来源：{_clean(r.get('缺陷/应力来源',''))}\n"
             f"机制：{_clean(r.get('作用机制',''))}\n"

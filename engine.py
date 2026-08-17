@@ -121,48 +121,266 @@ def load_data():
     text_cols = ["题名","摘要","作者关键词","Keywords Plus","详细二级分类","研究方法","自动研究问题","自动主要结论"]
     df["_text"] = df[text_cols].fillna("").astype(str).agg(" ".join, axis=1).str.lower()
 
-    # 兼容现有页面需要的字段
+    # ------------------------------------------------------------------
+    # 文献证据解析 V2
+    # 不再把“程序没识别出来”和“论文没有研究”都混成“未明确”。
+    # 当前层级基于题名、摘要、关键词、研究方法、自动研究问题和自动主要结论。
+    # ------------------------------------------------------------------
+    evidence_text = df["_text"]
+    abstract_len = df["摘要"].fillna("").astype(str).str.len()
+    conclusion_len = df["自动主要结论"].fillna("").astype(str).str.len()
+    question_len = df["自动研究问题"].fillna("").astype(str).str.len()
+    method_raw_len = df["研究方法"].fillna("").astype(str).str.len()
+
+    has_abstract_evidence = (abstract_len >= 120) | (conclusion_len >= 80) | (question_len >= 60)
+    has_min_evidence = (abstract_len >= 50) | (conclusion_len >= 35) | (question_len >= 30)
+
+    # 1. 缺陷 / 应力来源：尽量把“基础物性/其他”缩到真正的基础支撑文献。
     df["缺陷/应力来源"] = np.select(
         [
-            df["_text"].str.contains("vacancy|point defect|氢空位|钾空位|氧空位", regex=True),
-            df["_text"].str.contains("impurity|dopant|doping|杂质|掺杂", regex=True),
-            df["_text"].str.contains("inclusion|dislocation|growth defect|supersaturation|包裹体|位错|生长缺陷|过饱和度", regex=True),
-            df["_text"].str.contains("subsurface|polishing|grinding|machining|亚表面|抛光|研磨|加工", regex=True),
+            _series_hit(evidence_text, [
+                "hydrogen vacancy","proton vacancy","potassium vacancy","oxygen vacancy",
+                "point defect","vacancy defect","interstitial defect",
+                "氢空位","质子空位","钾空位","氧空位","点缺陷","间隙缺陷",
+            ]),
+            _series_hit(evidence_text, [
+                "impurity","dopant","doping","foreign ion","metal ion",
+                "杂质","掺杂","外来离子","金属离子",
+            ]),
+            _series_hit(evidence_text, [
+                "solution inclusion","particle inclusion","inclusion","scattering center",
+                "包裹体","夹杂","散射中心",
+            ]),
+            _series_hit(evidence_text, [
+                "dislocation","growth striation","lattice strain","residual strain",
+                "位错","生长条纹","晶格应变","残余应变",
+            ]),
+            _series_hit(evidence_text, [
+                "seed crystal","seed orientation","seed holder","constraint",
+                "籽晶","籽晶取向","固定方式","机械约束",
+            ]),
+            _series_hit(evidence_text, [
+                "supersaturation","growth sector","growth interface","rapid growth",
+                "fast growth","growth defect","solution growth","crystal growth",
+                "过饱和度","生长界面","生长扇区","快速生长","生长缺陷","溶液生长",
+            ]),
+            _series_hit(evidence_text, [
+                "subsurface damage","sub-surface damage","surface damage","polishing",
+                "grinding","diamond turning","fly cutting","machining",
+                "亚表面损伤","表面损伤","抛光","研磨","金刚石车削","飞切","加工损伤",
+            ]),
+            _series_hit(evidence_text, [
+                "thermal stress","residual stress","concentration gradient","thermal gradient",
+                "cooling rate","temperature gradient",
+                "热应力","残余应力","浓度梯度","温度梯度","降温速率",
+            ]),
         ],
-        ["本征点缺陷","杂质/掺杂","晶体生长缺陷","加工引入缺陷"],
-        default="基础物性/其他"
+        [
+            "本征点缺陷",
+            "杂质/掺杂",
+            "包裹体/散射中心",
+            "位错/晶格应变",
+            "籽晶/固定约束",
+            "晶体生长条件/界面",
+            "加工引入缺陷",
+            "热/浓度应力",
+        ],
+        default="基础物性/其他",
     )
+
+    # 2. 作用机制：扩展机制词典，降低“机制未明确”比例。
+    mechanism_masks = [
+        _series_hit(evidence_text, [
+            "localized absorption","local absorption","absorption precursor","energy deposition",
+            "photoionization","multiphoton","avalanche ionization",
+            "局域吸收","吸收前驱体","能量沉积","光电离","多光子","雪崩电离",
+        ]),
+        _series_hit(evidence_text, [
+            "electronic structure","defect level","defect state","density of states",
+            "band gap","localized state","charge density",
+            "电子结构","缺陷能级","缺陷态","态密度","带隙","局域态","电荷密度",
+        ]),
+        _series_hit(evidence_text, [
+            "thermal stress","residual stress","stress concentration","stress field",
+            "fracture mechanics","crack propagation","crack initiation",
+            "热应力","残余应力","应力集中","应力场","断裂力学","裂纹扩展","裂纹萌生",
+        ]),
+        _series_hit(evidence_text, [
+            "lattice distortion","lattice relaxation","local strain","elastic distortion",
+            "晶格畸变","晶格弛豫","局域应变","弹性畸变",
+        ]),
+        _series_hit(evidence_text, [
+            "hydrogen bond","proton transfer","proton dynamics","hydrogen-bond network",
+            "氢键","质子转移","质子动力学","氢键网络",
+        ]),
+        _series_hit(evidence_text, [
+            "scattering mechanism","rayleigh scattering","mie scattering","refractive index mismatch",
+            "inclusion scattering","散射机制","瑞利散射","米氏散射","折射率失配","包裹体散射",
+        ]),
+        _series_hit(evidence_text, [
+            "growth interface","interface instability","mass transfer","mass transport",
+            "solute transport","convection","boundary layer",
+            "生长界面","界面失稳","传质","溶质输运","对流","边界层",
+        ]),
+        _series_hit(evidence_text, [
+            "subsurface damage evolution","damage evolution","plastic deformation",
+            "brittle fracture","microcrack formation",
+            "亚表面损伤演化","损伤演化","塑性变形","脆性断裂","微裂纹形成",
+        ]),
+        _series_hit(evidence_text, [
+            "inclusion","solution inclusion","particle inclusion","scattering center",
+            "包裹体","夹杂","散射中心",
+        ]),
+    ]
+
+    mechanism_values = [
+        "局域吸收/能量沉积",
+        "电子结构/缺陷态",
+        "热-力应力/裂纹",
+        "晶格畸变/局域应变",
+        "氢键/质子动力学",
+        "散射/折射率失配",
+        "生长界面/传质",
+        "加工损伤演化",
+        "包裹体/散射",
+    ]
+
     df["作用机制"] = np.select(
-        [
-            df["_text"].str.contains("electronic structure|defect level|density of states|电子结构|缺陷能级|态密度", regex=True),
-            df["_text"].str.contains("hydrogen bond|proton transfer|lattice distortion|氢键|质子转移|晶格畸变", regex=True),
-            df["_text"].str.contains("thermal stress|residual stress|fracture|crack|热应力|残余应力|裂纹", regex=True),
-            df["_text"].str.contains("inclusion|scattering center|包裹体|散射中心", regex=True),
-        ],
-        ["电子结构/缺陷态","氢键/局域结构","热-力应力/裂纹","包裹体/散射"],
-        default="机制未明确"
+        mechanism_masks,
+        mechanism_values,
+        default="",
     )
-    df["宏观结果"] = np.select(
-        [
-            df["_text"].str.contains("crack|fracture|microcrack|开裂|裂纹|断裂", regex=True),
-            df["_text"].str.contains("laser damage|lidt|damage threshold|激光损伤|损伤阈值", regex=True),
-            df["_text"].str.contains("absorption|optical property|transmission|吸收|光学性质|透过率", regex=True),
-            df["_text"].str.contains("scattering|optical homogeneity|散射|光学均匀性", regex=True),
-        ],
-        ["开裂/断裂","激光损伤/LIDT","吸收/光学响应","散射/光学均匀性"],
-        default="结果未明确"
+
+    fundamental_mask = _series_hit(evidence_text, [
+        "electronic band","band structure","optical property","elastic constant",
+        "dielectric","refractive index","phase transition","crystal structure",
+        "nonlinear optical","electro-optic",
+        "能带结构","光学性质","弹性常数","介电","折射率","相变","晶体结构",
+        "非线性光学","电光",
+    ])
+
+    df.loc[df["作用机制"].eq("") & fundamental_mask, "作用机制"] = "未讨论机制/基础性质"
+    df.loc[df["作用机制"].eq("") & has_abstract_evidence, "作用机制"] = "待核验（摘要未明确）"
+    df.loc[df["作用机制"].eq("") & ~has_abstract_evidence, "作用机制"] = "摘要证据不足"
+
+    # 3. 研究结果 / 宏观后果：允许“基础物性（非失效）”，避免把不适用误写成不知道。
+    result_masks = [
+        _series_hit(evidence_text, [
+            "crack initiation","crack propagation","crack","fracture","microcrack",
+            "开裂","裂纹","断裂","微裂纹",
+        ]),
+        _series_hit(evidence_text, [
+            "laser-induced damage","laser damage","lidt","damage threshold","breakdown threshold",
+            "激光损伤","损伤阈值","击穿阈值",
+        ]),
+        _series_hit(evidence_text, [
+            "weak absorption","optical absorption","absorption coefficient","transmission",
+            "optical response","localized absorption",
+            "弱吸收","光学吸收","吸收系数","透过率","光学响应","局域吸收",
+        ]),
+        _series_hit(evidence_text, [
+            "scattering","optical homogeneity","optical uniformity","scattering particle",
+            "散射","光学均匀性","光学均一性","散射颗粒",
+        ]),
+        _series_hit(evidence_text, [
+            "growth quality","crystal quality","defect density","growth rate","morphology",
+            "晶体质量","缺陷密度","生长速率","生长质量","形貌",
+        ]),
+        _series_hit(evidence_text, [
+            "subsurface damage","surface damage","surface roughness","machining damage",
+            "亚表面损伤","表面损伤","表面粗糙度","加工损伤",
+        ]),
+        _series_hit(evidence_text, [
+            "mechanical property","fracture toughness","elastic modulus","stress distribution",
+            "机械性能","断裂韧性","弹性模量","应力分布",
+        ]),
+    ]
+
+    result_values = [
+        "开裂/断裂",
+        "激光损伤/LIDT",
+        "吸收/光学响应",
+        "散射/光学均匀性",
+        "生长质量/缺陷密度",
+        "表面/亚表面损伤",
+        "力学/应力响应",
+    ]
+
+    df["宏观结果"] = np.select(result_masks, result_values, default="")
+    df.loc[df["宏观结果"].eq("") & fundamental_mask, "宏观结果"] = "基础物性（非失效）"
+    df.loc[df["宏观结果"].eq("") & has_abstract_evidence, "宏观结果"] = "待核验（摘要未明确）"
+    df.loc[df["宏观结果"].eq("") & ~has_abstract_evidence, "宏观结果"] = "摘要证据不足"
+
+    # 4. 方法允许多标签；避免一篇同时有“实验+DFT”却只显示一个。
+    method_rules = [
+        ("DFT/第一性原理", [
+            "density functional theory","first principles","first-principles"," dft ",
+            "formation energy","density of states","band structure",
+            "第一性原理","形成能","态密度","能带结构",
+        ]),
+        ("分子动力学", [
+            "molecular dynamics","md simulation","atomistic simulation",
+            "分子动力学","原子模拟",
+        ]),
+        ("有限元/连续介质", [
+            "finite element","fem","multiphysics","continuum mechanics",
+            "有限元","多物理场","连续介质",
+        ]),
+        ("晶体生长实验", [
+            "solution growth","crystal growth","rapid growth","fast growth",
+            "growth experiment","seed crystal",
+            "溶液生长","晶体生长","快速生长","籽晶",
+        ]),
+        ("激光损伤测试", [
+            "laser damage test","lidt measurement","damage threshold measurement",
+            "laser-induced damage test","激光损伤测试","损伤阈值测试",
+        ]),
+        ("光热/弱吸收", [
+            "photothermal","thermal lens","photothermal common-path interferometry",
+            "weak absorption","pci",
+            "光热","热透镜","弱吸收",
+        ]),
+        ("光谱/显微表征", [
+            "raman","ftir","infrared spectroscopy","spectroscopy","afm","sem","tem",
+            "microscopy","xrd","x-ray diffraction","x-ray topography",
+            "拉曼","红外","光谱","显微","原子力显微","扫描电镜","透射电镜",
+            "x射线衍射","x射线形貌",
+        ]),
+        ("光学性能表征", [
+            "uv-vis","transmission spectrum","absorption spectrum","refractive index",
+            "optical measurement","透过光谱","吸收光谱","折射率","光学测试",
+        ]),
+        ("力学/应力表征", [
+            "mechanical test","fracture toughness","elastic modulus","residual stress measurement",
+            "力学测试","断裂韧性","弹性模量","残余应力测量",
+        ]),
+    ]
+
+    method_labels = pd.Series("", index=df.index, dtype="object")
+    for label, terms in method_rules:
+        hit = _series_hit(evidence_text, terms)
+        first = hit & method_labels.eq("")
+        more = hit & ~method_labels.eq("")
+        method_labels.loc[first] = label
+        method_labels.loc[more] = method_labels.loc[more] + " + " + label
+
+    # 最多保留3个主方法，避免表格一格过长。
+    method_labels = method_labels.map(
+        lambda x: " + ".join(str(x).split(" + ")[:3]) if x else ""
     )
-    df["_方法标签"] = np.select(
-        [
-            df["_text"].str.contains("density functional theory|first principles|first-principles|\\bdft\\b", regex=True),
-            df["_text"].str.contains("molecular dynamics|md simulation", regex=True),
-            df["_text"].str.contains("finite element|multiphysics", regex=True),
-            df["_text"].str.contains("photothermal|weak absorption|\\bpci\\b", regex=True),
-            df["_text"].str.contains("raman|ftir|xrd|afm|sem|tem|spectroscopy|microscopy", regex=True),
-        ],
-        ["DFT/第一性原理","分子动力学","有限元/连续介质","光热/弱吸收","光谱/显微表征"],
-        default="未明确"
-    )
+
+    method_labels.loc[
+        method_labels.eq("") & (method_raw_len > 8)
+    ] = "实验/方法待细分"
+    method_labels.loc[
+        method_labels.eq("") & has_abstract_evidence
+    ] = "待核验（摘要未明确）"
+    method_labels.loc[
+        method_labels.eq("") & ~has_abstract_evidence
+    ] = "摘要证据不足"
+
+    df["_方法标签"] = method_labels
+
 
     if (df["材料相关性"] == "KDP/DKDP相关").any():
         related = df["材料相关性"].eq("KDP/DKDP相关")
@@ -204,25 +422,175 @@ def load_data():
     # 保留旧字段值以兼容既有页面/缓存；新的页面通过 material_scope() 控制材料范围。
     df["V5相关池"] = np.where(related, "KDP/DKDP相关池", "非核心/待核")
 
-    score = (
-        df["综合重要度"].clip(0,100) * 0.70
-        + np.log1p(df["被引次数"].clip(lower=0)) / np.log(201) * 12
-        + df["_text"].str.contains(
-            "defect|vacancy|crack|laser damage|subsurface|缺陷|空位|开裂|激光损伤",
-            regex=True
-        ).astype(float) * 12
+    # ------------------------------------------------------------------
+    # 证据完整度与可信度审计
+    # “科研价值高”与“当前证据解析完整”分开计分。
+    # ------------------------------------------------------------------
+    kdp_direct_text = (
+        df["题名"].fillna("").astype(str)
+        + " " + df["摘要"].fillna("").astype(str)
+        + " " + df["作者关键词"].fillna("").astype(str)
+        + " " + df["Keywords Plus"].fillna("").astype(str)
     )
-    df["V5科研优先分"] = score.clip(0,100).round(1)
 
+    kdp_direct = _series_hit(
+        kdp_direct_text,
+        ["kdp", "kh2po4", "potassium dihydrogen phosphate"],
+    )
+
+    df["研究对象确认"] = np.select(
+        [
+            kdp_direct & ~dkdp_only,
+            comparison,
+            kdp_primary & ~kdp_direct,
+            dkdp_only,
+        ],
+        [
+            "KDP直接研究",
+            "KDP-DKDP对照",
+            "KDP相关支撑/待核",
+            "DKDP扩展",
+        ],
+        default="非核心/待核",
+    )
+
+    mechanism_explicit = ~df["作用机制"].isin([
+        "待核验（摘要未明确）",
+        "摘要证据不足",
+    ])
+    result_explicit = ~df["宏观结果"].isin([
+        "待核验（摘要未明确）",
+        "摘要证据不足",
+    ])
+    method_explicit = ~df["_方法标签"].isin([
+        "待核验（摘要未明确）",
+        "摘要证据不足",
+        "实验/方法待细分",
+    ])
+
+    # “未讨论机制/基础性质”“基础物性（非失效）”属于明确的不适用，而不是缺失。
+    completeness = (
+        kdp_direct.astype(float) * 15
+        + has_abstract_evidence.astype(float) * 15
+        + (question_len >= 30).astype(float) * 10
+        + method_explicit.astype(float) * 15
+        + mechanism_explicit.astype(float) * 20
+        + result_explicit.astype(float) * 15
+        + (conclusion_len >= 35).astype(float) * 5
+        + df["DOI"].fillna("").astype(str).str.len().gt(5).astype(float) * 5
+    )
+    df["证据完整度分"] = completeness.clip(0, 100).round(0).astype(int)
+
+    df["证据完整度状态"] = pd.cut(
+        df["证据完整度分"],
+        bins=[-1, 54, 69, 84, 100],
+        labels=["需全文核验", "摘要级", "较完整", "完整"],
+    ).astype(str)
+
+    direct_problem = _series_hit(
+        evidence_text,
+        [
+            "defect","vacancy","impurity","dopant","inclusion","dislocation",
+            "crack","fracture","thermal stress","laser damage","lidt",
+            "subsurface damage","growth defect","supersaturation",
+            "缺陷","空位","杂质","掺杂","包裹体","位错","开裂","裂纹",
+            "热应力","激光损伤","损伤阈值","亚表面损伤","生长缺陷","过饱和度",
+        ],
+    )
+
+    foundation_support = fundamental_mask | _series_hit(
+        evidence_text,
+        [
+            "elastic constant","thermal expansion","thermal conductivity",
+            "electronic structure","hydrogen bond","optical property",
+            "弹性常数","热膨胀","热导率","电子结构","氢键","基础光学性质",
+        ],
+    )
+
+    df["证据角色"] = np.select(
+        [
+            kdp_primary & direct_problem & (df["证据完整度分"] >= 70),
+            kdp_primary & foundation_support & (df["证据完整度分"] >= 65),
+            kdp_primary & direct_problem,
+            kdp_primary,
+        ],
+        [
+            "直接核心证据",
+            "基础支撑证据",
+            "直接主题/待核验",
+            "扩展/待核证据",
+        ],
+        default="非核心",
+    )
+
+    # 科研价值分：仍保留原有综合重要度、被引与主题价值。
+    value_score = (
+        df["综合重要度"].clip(0, 100) * 0.66
+        + np.log1p(df["被引次数"].clip(lower=0)) / np.log(201) * 11
+        + direct_problem.astype(float) * 13
+        + kdp_direct.astype(float) * 7
+    )
+    df["V5科研优先分"] = value_score.clip(0, 100).round(1)
+
+    role_bonus = df["证据角色"].map({
+        "直接核心证据": 8.0,
+        "基础支撑证据": 5.0,
+        "直接主题/待核验": 2.0,
+        "扩展/待核证据": 0.0,
+        "非核心": -5.0,
+    }).fillna(0.0)
+
+    core_rank = (
+        df["V5科研优先分"] * 0.68
+        + df["证据完整度分"] * 0.27
+        + role_bonus
+    )
+    df["V5核心排序分"] = core_rank.clip(0, 100).round(1)
+
+    # ------------------------------------------------------------------
+    # 分级：S 层新增“证据完整度 >= 70”硬门槛。
+    # 不再因为期刊、被引或主题分高就自动进入核心证据库。
+    # ------------------------------------------------------------------
     tier = pd.Series("C 扩展/背景", index=df.index, dtype="object")
-    ranked = df[kdp_primary].sort_values(["V5科研优先分","被引次数","年份"], ascending=False)
-    tier.loc[ranked.index[:50]] = "S 核心 50"
-    tier.loc[ranked.index[50:200]] = "A 重点 150"
-    tier.loc[ranked.index[200:1000]] = "B 扩展 800"
-    # DKDP-only 文献保留，但不占用 KDP 的 S/A/B 核心名额。
+
+    s_eligible = (
+        kdp_primary
+        & (df["证据完整度分"] >= 70)
+        & df["证据角色"].isin(["直接核心证据", "基础支撑证据"])
+    )
+    s_ranked = df[s_eligible].sort_values(
+        ["V5核心排序分", "V5科研优先分", "被引次数", "年份"],
+        ascending=False,
+    )
+    s_idx = s_ranked.index[:50]
+    tier.loc[s_idx] = "S 核心 50"
+
+    remaining = df[kdp_primary & ~df.index.isin(s_idx)].sort_values(
+        ["V5核心排序分", "V5科研优先分", "被引次数", "年份"],
+        ascending=False,
+    )
+    a_idx = remaining.index[:150]
+    b_idx = remaining.index[150:950]
+    tier.loc[a_idx] = "A 重点 150"
+    tier.loc[b_idx] = "B 扩展 800"
+
     tier.loc[df.index[dkdp_only]] = "C 扩展/背景"
     tier.loc[df.index[~related]] = "D 非核心/待核"
     df["V5推荐等级"] = tier
+
+    # S1 / S2 不是再造一个评分，而是告诉用户“这篇核心文献扮演什么证据角色”。
+    core_level = pd.Series("—", index=df.index, dtype="object")
+    s1 = df.index.isin(s_idx) & df["证据角色"].eq("直接核心证据")
+    s2 = df.index.isin(s_idx) & ~s1
+    core_level.loc[s1] = "S1 直接核心"
+    core_level.loc[s2] = "S2 基础支撑"
+    core_level.loc[df.index.isin(a_idx)] = "A 重点/待精读"
+    core_level.loc[
+        kdp_primary
+        & df["证据完整度状态"].isin(["需全文核验", "摘要级"])
+    ] = "需核验"
+    df["核心证据层级"] = core_level
+
     return df
 
 
@@ -285,7 +653,10 @@ def search_papers(df, q, top_k=100, scope="相关池"):
     conclusion = work["自动主要结论"].astype(str) + " " + work["自动研究问题"].astype(str)
     all_text = title + " " + keywords + " " + abstract + " " + conclusion
 
-    score = work["V5科研优先分"].fillna(0) / 40.0
+    score = (
+        work["V5科研优先分"].fillna(0) / 45.0
+        + work.get("证据完整度分", pd.Series(0, index=work.index)).fillna(0) / 55.0
+    )
 
     # 普通关键词
     tokens = re.findall(r"[a-z][a-z0-9+\-]{1,}|[\u4e00-\u9fff]{2,}", str(q).lower())
@@ -349,8 +720,8 @@ def search_papers(df, q, top_k=100, scope="相关池"):
     rank = {"强直接证据":3,"直接主题证据":2,"背景/间接证据":1}
     out["_证据排序"] = out["_证据层级"].map(rank).fillna(0)
     out = out.sort_values(
-        ["_证据排序","_检索得分","V5科研优先分","被引次数"],
-        ascending=[False,False,False,False]
+        ["_证据排序","_检索得分","V5核心排序分","V5科研优先分","被引次数"],
+        ascending=[False,False,False,False,False]
     )
     return out.head(top_k).drop(columns=["_证据排序"])
 
@@ -393,8 +764,13 @@ def compact_context(df, maxp=15):
         blocks.append(
             f"[P{i}]\n题名：{_clean(r.get('题名',''))}\n年份：{r.get('年份','')}\n"
             f"期刊：{_clean(r.get('期刊',''))}\nDOI：{_clean(r.get('DOI',''))}\n"
-            f"等级：{r.get('V5推荐等级','')}\n证据层级：{r.get('_证据层级','未标记')}\n"
-            f"方法：{r.get('_方法标签','')}\n摘要：{_clean(r.get('摘要',''))[:2200]}\n"
+            f"等级：{r.get('V5推荐等级','')}\n核心角色：{r.get('核心证据层级','—')}\n"
+            f"证据完整度：{r.get('证据完整度分','')} / 100（{r.get('证据完整度状态','')}）\n"
+            f"证据层级：{r.get('_证据层级','未标记')}\n"
+            f"研究对象：{r.get('研究对象确认','')}\n"
+            f"来源：{r.get('缺陷/应力来源','')}\n机制：{r.get('作用机制','')}\n"
+            f"结果：{r.get('宏观结果','')}\n方法：{r.get('_方法标签','')}\n"
+            f"摘要：{_clean(r.get('摘要',''))[:2200]}\n"
             f"结论：{_clean(r.get('自动主要结论',''))[:900]}"
         )
         sources.append({
@@ -416,6 +792,7 @@ def offline_summary(df, topic=""):
         f"- 证据层级：{evidence}\n"
         f"- 主要来源：{df['缺陷/应力来源'].value_counts().head(3).to_dict()}\n"
         f"- 主要机制：{df['作用机制'].value_counts().head(3).to_dict()}\n"
-        f"- 主要结果：{df['宏观结果'].value_counts().head(3).to_dict()}\n\n"
-        "> 正式科研结论仍应核对论文全文。"
+        f"- 主要结果：{df['宏观结果'].value_counts().head(3).to_dict()}\n"
+        f"- 证据完整度：{df['证据完整度状态'].value_counts().to_dict() if '证据完整度状态' in df.columns else {}}\n\n"
+        "> “摘要级/需全文核验”只能用于线索发现，不能单独支撑强科研结论。"
     )

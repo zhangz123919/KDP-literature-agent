@@ -218,27 +218,80 @@ def dashboard():
         )
         plotly(fig, height=520, key="dashboard_trend")
 
-    section_title("核心证据库", "S 核心 50：用于开题、机制论证和关键路线设计的优先文献")
+    section_title(
+        "核心证据库",
+        "S层已加入“证据完整度 ≥ 70”硬门槛；高被引/高分但方法、机制或结果没有解析清楚的文献不会直接进入核心证据层",
+    )
+
     top = (
         related[related["V5推荐等级"] == "S 核心 50"]
-        .sort_values("V5科研优先分", ascending=False)
+        .sort_values(["V5核心排序分", "证据完整度分"], ascending=False)
     )
+
+    s1_n = int((top["核心证据层级"] == "S1 直接核心").sum()) if len(top) else 0
+    s2_n = int((top["核心证据层级"] == "S2 基础支撑").sum()) if len(top) else 0
+    complete_n = int(top["证据完整度状态"].isin(["完整", "较完整"]).sum()) if len(top) else 0
+    median_complete = int(top["证据完整度分"].median()) if len(top) else 0
+
+    metric_cards(
+        [
+            {"label": "当前S核心", "value": len(top), "note": "通过完整度硬门槛", "accent": COLORS["primary"]},
+            {"label": "S1直接核心", "value": s1_n, "note": "直接回答缺陷/开裂问题", "accent": COLORS["teal"]},
+            {"label": "S2基础支撑", "value": s2_n, "note": "参数、结构与机理支撑", "accent": COLORS["orange"]},
+            {"label": "完整度中位数", "value": f"{median_complete}/100", "note": f"{complete_n} 篇较完整/完整", "accent": COLORS["cyan"]},
+        ]
+    )
+
     show_cols = [
-        "题名", "年份", "期刊", "缺陷/应力来源", "作用机制", "宏观结果",
-        "_方法标签", "V5科研优先分", "DOI",
+        "题名", "年份", "期刊", "核心证据层级", "证据完整度状态", "证据完整度分",
+        "研究对象确认", "缺陷/应力来源", "作用机制", "宏观结果",
+        "_方法标签", "V5核心排序分", "DOI",
     ]
     show_cols = [c for c in show_cols if c in top.columns]
+
     st.dataframe(
         top[show_cols],
         width="stretch",
-        height=450,
+        height=520,
         hide_index=True,
         column_config={
-            "V5科研优先分": st.column_config.ProgressColumn(
-                "科研优先分", min_value=0, max_value=100, format="%.1f"
-            )
+            "证据完整度分": st.column_config.ProgressColumn(
+                "证据完整度", min_value=0, max_value=100, format="%d"
+            ),
+            "V5核心排序分": st.column_config.ProgressColumn(
+                "核心排序分", min_value=0, max_value=100, format="%.1f"
+            ),
         },
     )
+
+    pending = (
+        related[
+            related["V5推荐等级"].eq("A 重点 150")
+            & related["核心证据层级"].eq("需核验")
+        ]
+        .sort_values(["V5科研优先分", "被引次数"], ascending=False)
+        .head(15)
+    )
+
+    if len(pending):
+        with st.expander(
+            f"高价值但证据不足的候选文献 · {len(pending)} 篇示例",
+            expanded=False,
+        ):
+            st.caption(
+                "这些文献可能很重要，但当前摘要/自动字段不足以确认方法、机制或结果。"
+                "系统已主动降到待核层，不参与强结论。"
+            )
+            pending_cols = [
+                "题名", "年份", "期刊", "证据完整度状态", "证据完整度分",
+                "作用机制", "宏观结果", "_方法标签", "V5科研优先分", "DOI",
+            ]
+            pending_cols = [c for c in pending_cols if c in pending.columns]
+            st.dataframe(
+                pending[pending_cols],
+                width="stretch",
+                hide_index=True,
+            )
 
 
 def literature():
@@ -278,7 +331,8 @@ def literature():
     )
 
     cols = [
-        "题名", "作者", "年份", "期刊", "_证据层级", "V5推荐等级", "V5科研优先分",
+        "题名", "作者", "年份", "期刊", "_证据层级", "V5推荐等级",
+        "核心证据层级", "证据完整度状态", "证据完整度分", "V5科研优先分",
         "缺陷/应力来源", "作用机制", "宏观结果", "_方法标签", "被引次数", "DOI",
     ]
     cols = [c for c in cols if c in result.columns]
@@ -292,7 +346,10 @@ def literature():
         column_config={
             "V5科研优先分": st.column_config.ProgressColumn(
                 "科研优先分", min_value=0, max_value=100, format="%.1f"
-            )
+            ),
+            "证据完整度分": st.column_config.ProgressColumn(
+                "证据完整度", min_value=0, max_value=100, format="%d"
+            ),
         },
     )
     st.download_button(
@@ -304,7 +361,15 @@ def literature():
 
 # ---- Knowledge graph -------------------------------------------------------
 
-KG_UNCERTAIN = {"基础物性/其他", "机制未明确", "结果未明确", "未命中", ""}
+KG_UNCERTAIN = {
+    "基础物性/其他",
+    "待核验（摘要未明确）",
+    "摘要证据不足",
+    "未讨论机制/基础性质",
+    "基础物性（非失效）",
+    "未命中",
+    "",
+}
 KG_CORE_RAW_KEYWORDS = [
     "缺陷", "空位", "杂质", "掺杂", "包裹体", "散射", "位错", "生长", "过饱和",
     "加工", "表面", "亚表面", "激光损伤", "损伤", "LIDT", "裂纹", "开裂", "应力",
@@ -694,7 +759,7 @@ def knowledge_graph():
     with st.container(border=True):
         c1, c2, c3 = st.columns([1, 1.05, 1.1])
         scope = c1.radio("范围", ["相关池", "S+A", "全库"], horizontal=True)
-        hide_uncertain = c2.toggle("隐藏未明确分类", value=True)
+        hide_uncertain = c2.toggle("仅显示明确证据关系", value=True)
         core_raw_only = c3.toggle("统计仅看开裂 / 缺陷核心", value=True)
 
     if scope == "全库":
