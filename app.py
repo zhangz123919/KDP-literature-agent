@@ -36,111 +36,140 @@ apply_theme()
 sidebar_brand()
 sidebar_project_switcher()
 
+# ------------------------------------------------------------
+# IMPORTANT:
+# 首页内部跳转统一使用 st.page_link(StreamlitPage)。
+# 不再使用 href="/xxx" 直接跳转，避免新建浏览器 Session、
+# 丢失 session_state，并减少重复初始化造成的卡顿。
+# ------------------------------------------------------------
+PAGE = {
+    "home": st.Page(
+        safe_page(home_page),
+        title="首页",
+        icon=":material/home:",
+        default=True,
+        url_path="home",
+    ),
+    "overview": st.Page(
+        safe_page(dashboard),
+        title="科研驾驶舱",
+        icon=":material/dashboard:",
+        url_path="overview",
+    ),
+    "project": st.Page(
+        safe_page(project_workspace_page),
+        title="研究总控台",
+        icon=":material/account_tree:",
+        url_path="project",
+    ),
+    "literature": st.Page(
+        safe_page(literature),
+        title="文献中心",
+        icon=":material/library_books:",
+        url_path="literature",
+    ),
+    "knowledge": st.Page(
+        safe_page(knowledge_graph),
+        title="知识图谱",
+        icon=":material/hub:",
+        url_path="knowledge",
+    ),
+    "topics": st.Page(
+        safe_page(topic_review),
+        title="专题调研",
+        icon=":material/travel_explore:",
+        url_path="topics",
+    ),
+    "direction": st.Page(
+        safe_page(direction_review_page),
+        title="研究方向决策",
+        icon=":material/explore:",
+        url_path="direction",
+    ),
+    "compare": st.Page(
+        safe_page(compare),
+        title="多文献比较",
+        icon=":material/compare_arrows:",
+        url_path="compare",
+    ),
+    "diagnosis": st.Page(
+        safe_page(crack_diagnosis),
+        title="开裂诊断",
+        icon=":material/crisis_alert:",
+        url_path="diagnosis",
+    ),
+    "experiment": st.Page(
+        safe_page(experiment_design),
+        title="对照实验设计",
+        icon=":material/fact_check:",
+        url_path="experiment",
+    ),
+    "experiment_log": st.Page(
+        safe_page(experiment_lab_page),
+        title="实验记录与数据积累",
+        icon=":material/database:",
+        url_path="experiment-log",
+    ),
+    "theory": st.Page(
+        safe_page(theory),
+        title="理论计算规划与分析",
+        icon=":material/science:",
+        url_path="theory",
+    ),
+    "gaps": st.Page(
+        safe_page(gaps),
+        title="研究空白",
+        icon=":material/lightbulb:",
+        url_path="gaps",
+    ),
+    "ai": st.Page(
+        safe_page(ai_agent),
+        title="AI科研助手",
+        icon=":material/forum:",
+        url_path="ai",
+    ),
+    "reports": st.Page(
+        safe_page(reports),
+        title="报告中心",
+        icon=":material/description:",
+        url_path="reports",
+    ),
+    "audit": st.Page(
+        safe_page(audit),
+        title="数据审计",
+        icon=":material/monitor_heart:",
+        url_path="audit",
+    ),
+}
+
+# StreamlitPage 可以由 st.page_link 直接用于站内切换。
+# 保存到当前 Session，供首页作为真正的内部导航使用。
+st.session_state["_kdp_nav_pages"] = PAGE
+
 pages = {
     "总览": [
-        st.Page(
-            safe_page(home_page),
-            title="首页",
-            icon=":material/home:",
-            default=True,
-            url_path="home",
-        ),
-        st.Page(
-            safe_page(dashboard),
-            title="科研驾驶舱",
-            icon=":material/dashboard:",
-            url_path="overview",
-        ),
-        st.Page(
-            safe_page(project_workspace_page),
-            title="研究总控台",
-            icon=":material/account_tree:",
-            url_path="project",
-        ),
+        PAGE["home"],
+        PAGE["overview"],
+        PAGE["project"],
     ],
     "文献与知识": [
-        st.Page(
-            safe_page(literature),
-            title="文献中心",
-            icon=":material/library_books:",
-            url_path="literature",
-        ),
-        st.Page(
-            safe_page(knowledge_graph),
-            title="知识图谱",
-            icon=":material/hub:",
-            url_path="knowledge",
-        ),
-        st.Page(
-            safe_page(topic_review),
-            title="专题调研",
-            icon=":material/travel_explore:",
-            url_path="topics",
-        ),
-        st.Page(
-            safe_page(direction_review_page),
-            title="研究方向决策",
-            icon=":material/explore:",
-            url_path="direction",
-        ),
-        st.Page(
-            safe_page(compare),
-            title="多文献比较",
-            icon=":material/compare_arrows:",
-            url_path="compare",
-        ),
+        PAGE["literature"],
+        PAGE["knowledge"],
+        PAGE["topics"],
+        PAGE["direction"],
+        PAGE["compare"],
     ],
     "实验与计算": [
-        st.Page(
-            safe_page(crack_diagnosis),
-            title="开裂诊断",
-            icon=":material/crisis_alert:",
-            url_path="diagnosis",
-        ),
-        st.Page(
-            safe_page(experiment_design),
-            title="对照实验设计",
-            icon=":material/fact_check:",
-            url_path="experiment",
-        ),
-        st.Page(
-            safe_page(experiment_lab_page),
-            title="实验记录与数据积累",
-            icon=":material/database:",
-            url_path="experiment-log",
-        ),
-        st.Page(
-            safe_page(theory),
-            title="理论计算规划与分析",
-            icon=":material/science:",
-            url_path="theory",
-        ),
-        st.Page(
-            safe_page(gaps),
-            title="研究空白",
-            icon=":material/lightbulb:",
-            url_path="gaps",
-        ),
+        PAGE["diagnosis"],
+        PAGE["experiment"],
+        PAGE["experiment_log"],
+        PAGE["theory"],
+        PAGE["gaps"],
     ],
     "分析与输出": [
-        st.Page(
-            safe_page(ai_agent),
-            title="AI科研助手",
-            icon=":material/forum:",
-            url_path="ai",
-        ),
-        st.Page(
-            safe_page(reports),
-            title="报告中心",
-            icon=":material/description:",
-            url_path="reports",
-        ),
-        st.Page(
-            safe_page(audit),
-            title="数据审计",
-            icon=":material/monitor_heart:",
-            url_path="audit",
-        ),
+        PAGE["ai"],
+        PAGE["reports"],
+        PAGE["audit"],
     ],
 }
 

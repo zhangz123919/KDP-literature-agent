@@ -970,7 +970,15 @@ def _orbital_graph(
 
             xs.append(x); ys.append(y); zs.append(z)
             sizes.append(size)
-            colors.append(node_color)
+            # Scatter3d.marker.opacity only accepts a scalar in Plotly.
+            # Encode per-node transparency directly in RGBA marker colors instead.
+            if str(node_color).startswith("#") and len(str(node_color)) == 7:
+                h = str(node_color).lstrip("#")
+                rr, gg, bb = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+                rgba_color = f"rgba({rr},{gg},{bb},{node_opacity:.3f})"
+            else:
+                rgba_color = node_color
+            colors.append(rgba_color)
             opacities.append(node_opacity)
             labels.append(n if (n in top_names or n == focus) else "")
             hover.append(
@@ -1007,7 +1015,7 @@ def _orbital_graph(
                 marker=dict(
                     size=sizes,
                     color=colors,
-                    opacity=opacities,
+                    opacity=1.0,
                     line=dict(color="rgba(255,255,255,.78)", width=.8),
                 ),
                 hovertext=hover,
@@ -1133,6 +1141,129 @@ def _orbital_graph(
                 borderpad=6,
             ),
         ],
+    )
+    return fig
+
+
+
+def _orbital_graph_lite(chain: pd.DataFrame, top_n=26, camera_name="透视"):
+    """Compatibility fallback: fewer traces, no per-point alpha tricks."""
+    work = _top_chain(chain, min(top_n, len(chain))).copy()
+    if work.empty:
+        return go.Figure()
+
+    sc = work.groupby("缺陷/应力来源")["文献数"].sum().sort_values(ascending=False)
+    mc = work.groupby("作用机制")["文献数"].sum().sort_values(ascending=False)
+    oc = work.groupby("宏观结果")["文献数"].sum().sort_values(ascending=False)
+
+    sp = _constellation_positions(list(sc.index), 2.1, .1, .1, .78, .25)
+    mp = _constellation_positions(list(mc.index), 3.35, .35, .7, .82, .32)
+    op = _constellation_positions(list(oc.index), 4.55, -.2, 1.2, .86, .36)
+
+    pos = {}
+    pos.update({"S|" + k: v for k, v in sp.items()})
+    pos.update({"M|" + k: v for k, v in mp.items()})
+    pos.update({"O|" + k: v for k, v in op.items()})
+
+    sm = work.groupby(["缺陷/应力来源", "作用机制"], as_index=False)["文献数"].sum()
+    mo = work.groupby(["作用机制", "宏观结果"], as_index=False)["文献数"].sum()
+
+    fig = go.Figure()
+    fig.add_trace(_orbit_ellipse(2.1, .1, color="rgba(232,145,63,.22)"))
+    fig.add_trace(_orbit_ellipse(3.35, .35, color="rgba(118,131,226,.22)"))
+    fig.add_trace(_orbit_ellipse(4.55, -.2, color="rgba(40,181,184,.22)"))
+
+    # All links in one line trace for maximum compatibility.
+    xs, ys, zs = [], [], []
+    for _, r in sm.iterrows():
+        a = pos["S|" + str(r["缺陷/应力来源"])]
+        b = pos["M|" + str(r["作用机制"])]
+        pts = _curve_points(a, b, lift=.55, inward=.45, n=18)
+        xs.extend(pts[:, 0].tolist() + [None])
+        ys.extend(pts[:, 1].tolist() + [None])
+        zs.extend(pts[:, 2].tolist() + [None])
+    for _, r in mo.iterrows():
+        a = pos["M|" + str(r["作用机制"])]
+        b = pos["O|" + str(r["宏观结果"])]
+        pts = _curve_points(a, b, lift=.65, inward=.52, n=18)
+        xs.extend(pts[:, 0].tolist() + [None])
+        ys.extend(pts[:, 1].tolist() + [None])
+        zs.extend(pts[:, 2].tolist() + [None])
+
+    fig.add_trace(
+        go.Scatter3d(
+            x=xs, y=ys, z=zs, mode="lines",
+            line=dict(color="rgba(113,162,205,.28)", width=2),
+            hoverinfo="skip", showlegend=False,
+        )
+    )
+
+    def add_nodes(counts, positions, color, name):
+        max_count = max(float(counts.max()), 1.0)
+        names = list(counts.index)
+        coords = [positions[n] for n in names]
+        fig.add_trace(
+            go.Scatter3d(
+                x=[p[0] for p in coords],
+                y=[p[1] for p in coords],
+                z=[p[2] for p in coords],
+                mode="markers+text",
+                text=[n if i < 4 else "" for i, n in enumerate(names)],
+                textposition="top center",
+                marker=dict(
+                    size=[11 + 16 * math.sqrt(float(counts[n]) / max_count) for n in names],
+                    color=color,
+                    opacity=.92,
+                    line=dict(color="rgba(255,255,255,.7)", width=.8),
+                ),
+                hovertext=[
+                    f"<b>{n}</b><br>{name}<br>累计关系文献：{int(counts[n])} 篇"
+                    for n in names
+                ],
+                hoverinfo="text",
+                textfont=dict(color="#DDE7F4", size=10),
+                name=name,
+            )
+        )
+
+    add_nodes(sc, sp, "#E8913F", "缺陷 / 应力来源")
+    add_nodes(mc, mp, "#7683E2", "局部作用机制")
+    add_nodes(oc, op, "#28B5B8", "宏观结果")
+
+    fig.add_trace(
+        go.Scatter3d(
+            x=[0], y=[0], z=[0], mode="markers+text",
+            text=["KDP"], textposition="middle center",
+            marker=dict(size=30, color="#178BB1", line=dict(color="white", width=1.2)),
+            textfont=dict(color="white", size=13),
+            hoverinfo="skip", name="KDP研究核心",
+        )
+    )
+
+    cameras = {
+        "透视": dict(eye=dict(x=1.45, y=1.62, z=1.1)),
+        "俯视": dict(eye=dict(x=.05, y=.05, z=2.55)),
+        "侧视": dict(eye=dict(x=2.55, y=.08, z=.35)),
+    }
+    fig.update_layout(
+        paper_bgcolor="#06101D",
+        plot_bgcolor="#06101D",
+        margin=dict(l=0, r=0, t=42, b=0),
+        scene=dict(
+            bgcolor="#06101D",
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            zaxis=dict(visible=False),
+            aspectmode="cube",
+            camera=cameras.get(camera_name, cameras["透视"]),
+            dragmode="orbit",
+        ),
+        legend=dict(
+            orientation="h", y=1.02, x=.02,
+            bgcolor="rgba(4,12,22,.45)",
+            font=dict(color="#C8D6E6", size=10),
+        ),
+        font=dict(family='Inter,"Microsoft YaHei"', color="#DDE7F4"),
     )
     return fig
 
@@ -1335,13 +1466,25 @@ def knowledge_graph():
             st.warning("当前证据阈值下没有可显示的关系。")
             return
 
-        with st.spinner("正在构建三维机制星图…"):
-            fig = _orbital_graph(
+        used_fallback = False
+        try:
+            with st.spinner("正在构建三维机制星图…"):
+                fig = _orbital_graph(
+                    filtered,
+                    top_n=relation_limit,
+                    min_evidence=min_evidence,
+                    focus_layer=focus_layer,
+                    focus_node=focus_node,
+                    camera_name=camera_name,
+                )
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception("Advanced 3D graph failed", exc_info=exc)
+            used_fallback = True
+            st.warning("高级三维渲染未通过当前环境兼容检查，已自动切换到轻量兼容模式。")
+            fig = _orbital_graph_lite(
                 filtered,
-                top_n=relation_limit,
-                min_evidence=min_evidence,
-                focus_layer=focus_layer,
-                focus_node=focus_node,
+                top_n=min(relation_limit, 30),
                 camera_name=camera_name,
             )
 
@@ -1349,7 +1492,7 @@ def knowledge_graph():
             fig,
             width="stretch",
             theme=None,
-            height=820,
+            height=800 if used_fallback else 820,
             config={
                 "displaylogo": False,
                 "scrollZoom": True,
@@ -1360,7 +1503,7 @@ def knowledge_graph():
                     "scale": 2,
                 },
             },
-            key=f"kg_3d_{relation_limit}_{min_evidence}_{focus_layer}_{focus_node}_{camera_name}",
+            key=f"kg_3d_{relation_limit}_{min_evidence}_{focus_layer}_{focus_node}_{camera_name}_{used_fallback}",
         )
 
         # Relationship details: the 3D view is an entry point, not a dead-end.
