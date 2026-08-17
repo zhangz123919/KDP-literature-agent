@@ -1301,11 +1301,513 @@ def _orbital_graph_lite(chain: pd.DataFrame, top_n=26, camera_name="透视"):
     return fig
 
 
+
+def _sector_positions(names, radius, az_start, az_end, phase=0.0):
+    """Place structural nodes in category sectors on one mechanism sphere."""
+    names = list(names)
+    n = max(1, len(names))
+    out = {}
+    for i, name in enumerate(names):
+        f = (i + .5) / n
+        az = math.radians(az_start + (az_end - az_start) * f)
+        elev = .38 * math.sin(2 * math.pi * f + phase)
+        x = radius * math.cos(elev) * math.cos(az)
+        y = radius * math.cos(elev) * math.sin(az)
+        z = radius * math.sin(elev)
+        out[name] = (x, y, z)
+    return out
+
+
+def _paper_rank(work: pd.DataFrame) -> pd.DataFrame:
+    """Stable ranking for paper nodes without assuming every score column exists."""
+    d = work.copy()
+    d["_kg_rank"] = 0.0
+    for col, weight in [
+        ("V5核心排序分", 1.0),
+        ("V5科研优先分", .75),
+        ("综合重要度", .55),
+        ("被引次数", .02),
+        ("年份", .01),
+    ]:
+        if col in d.columns:
+            d["_kg_rank"] += pd.to_numeric(d[col], errors="coerce").fillna(0) * weight
+
+    if "V5推荐等级" in d.columns:
+        tier_bonus = {
+            "S 核心 50": 50,
+            "A 重点 150": 25,
+            "B 扩展 800": 8,
+        }
+        d["_kg_rank"] += d["V5推荐等级"].map(tier_bonus).fillna(0)
+
+    dedup_cols = ["题名"]
+    if "DOI" in d.columns:
+        # Prefer title dedup because many old records have no DOI.
+        pass
+    d = d.sort_values("_kg_rank", ascending=False)
+    d = d.drop_duplicates(subset=dedup_cols, keep="first")
+    return d
+
+
+def _rgba(hex_color, alpha):
+    h = str(hex_color).lstrip("#")
+    if len(h) != 6:
+        return hex_color
+    r, g, b = int(h[:2], 16), int(h[2:4], 16), int(h[4:], 16)
+    return f"rgba({r},{g},{b},{alpha})"
+
+
+def _dense_evidence_globe(
+    paper_work: pd.DataFrame,
+    chain: pd.DataFrame,
+    relation_limit=36,
+    paper_limit=180,
+    focus_layer="全局",
+    focus_node=None,
+    camera_name="透视",
+    show_papers=True,
+):
+    """
+    Dense 3D research evidence network.
+
+    Structural level:
+      KDP core -> defect/stress -> mechanism -> outcome
+
+    Evidence level:
+      each paper becomes a real node and is connected to its classified
+      source/mechanism/outcome. Hundreds of paper links are merged into
+      three Scatter3d line traces for performance.
+    """
+    c = _top_chain(chain, min(relation_limit, len(chain))).copy()
+    if c.empty:
+        return go.Figure(), pd.DataFrame(), 0, 0
+
+    # Only papers belonging to visible structural paths.
+    keys = set(
+        (
+            str(r["缺陷/应力来源"]),
+            str(r["作用机制"]),
+            str(r["宏观结果"]),
+        )
+        for _, r in c.iterrows()
+    )
+    pw = paper_work[
+        paper_work.apply(
+            lambda r: (
+                str(r.get("缺陷/应力来源", "")),
+                str(r.get("作用机制", "")),
+                str(r.get("宏观结果", "")),
+            ) in keys,
+            axis=1,
+        )
+    ].copy()
+
+    if focus_node:
+        if focus_layer == "缺陷/应力来源":
+            pw = pw[pw["缺陷/应力来源"].astype(str) == str(focus_node)]
+            c = c[c["缺陷/应力来源"].astype(str) == str(focus_node)]
+        elif focus_layer == "作用机制":
+            pw = pw[pw["作用机制"].astype(str) == str(focus_node)]
+            c = c[c["作用机制"].astype(str) == str(focus_node)]
+        elif focus_layer == "宏观结果":
+            pw = pw[pw["宏观结果"].astype(str) == str(focus_node)]
+            c = c[c["宏观结果"].astype(str) == str(focus_node)]
+
+    pw = _paper_rank(pw)
+    if show_papers and paper_limit > 0:
+        pw = pw.head(min(paper_limit, len(pw))).copy()
+    else:
+        pw = pw.head(0).copy()
+
+    # Structural nodes.
+    sc = c.groupby("缺陷/应力来源")["文献数"].sum().sort_values(ascending=False)
+    mc = c.groupby("作用机制")["文献数"].sum().sort_values(ascending=False)
+    oc = c.groupby("宏观结果")["文献数"].sum().sort_values(ascending=False)
+
+    source_pos = _sector_positions(sc.index, 2.75, 125, 225, phase=.2)
+    mech_pos = _sector_positions(mc.index, 2.75, 238, 352, phase=1.1)
+    outcome_pos = _sector_positions(oc.index, 2.75, -5, 108, phase=2.0)
+
+    structural_pos = {}
+    structural_pos.update({"S|" + k: v for k, v in source_pos.items()})
+    structural_pos.update({"M|" + k: v for k, v in mech_pos.items()})
+    structural_pos.update({"O|" + k: v for k, v in outcome_pos.items()})
+
+    fig = go.Figure()
+
+    # Background sphere / instrument grid.
+    fig.add_trace(_sphere_wireframe(3.05, "rgba(123,163,202,.11)", 1.0))
+    fig.add_trace(_sphere_wireframe(4.95, "rgba(89,136,177,.055)", .8))
+
+    rng = np.random.default_rng(20260818)
+    stars = rng.normal(size=(58, 3))
+    norms = np.linalg.norm(stars, axis=1, keepdims=True)
+    stars = stars / np.where(norms == 0, 1, norms)
+    stars = stars * rng.uniform(5.2, 6.2, size=(58, 1))
+    fig.add_trace(
+        go.Scatter3d(
+            x=stars[:, 0], y=stars[:, 1], z=stars[:, 2],
+            mode="markers",
+            marker=dict(size=1.4, color="rgba(187,210,229,.23)"),
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+
+    # Strong structural paths.
+    sm = (
+        c.groupby(["缺陷/应力来源", "作用机制"], as_index=False)["文献数"]
+        .sum()
+        .sort_values("文献数", ascending=False)
+    )
+    mo = (
+        c.groupby(["作用机制", "宏观结果"], as_index=False)["文献数"]
+        .sum()
+        .sort_values("文献数", ascending=False)
+    )
+    max_w = max(float(c["文献数"].max()), 1.0)
+
+    def structural_edge_trace(df_edge, a_col, b_col, a_prefix, b_prefix, color):
+        xs, ys, zs = [], [], []
+        for _, r in df_edge.iterrows():
+            a = structural_pos[a_prefix + "|" + str(r[a_col])]
+            b = structural_pos[b_prefix + "|" + str(r[b_col])]
+            pts = _curve_points(a, b, lift=.32, inward=.58, n=22)
+            xs.extend(pts[:, 0].tolist() + [None])
+            ys.extend(pts[:, 1].tolist() + [None])
+            zs.extend(pts[:, 2].tolist() + [None])
+        return go.Scatter3d(
+            x=xs, y=ys, z=zs,
+            mode="lines",
+            line=dict(color=color, width=2.7),
+            hoverinfo="skip",
+            showlegend=False,
+        )
+
+    fig.add_trace(
+        structural_edge_trace(
+            sm, "缺陷/应力来源", "作用机制", "S", "M",
+            "rgba(113,126,229,.48)"
+        )
+    )
+    fig.add_trace(
+        structural_edge_trace(
+            mo, "作用机制", "宏观结果", "M", "O",
+            "rgba(36,183,185,.50)"
+        )
+    )
+
+    # KDP core.
+    fig.add_trace(
+        go.Scatter3d(
+            x=[0], y=[0], z=[0],
+            mode="markers+text",
+            text=["KDP"],
+            textposition="middle center",
+            marker=dict(
+                size=36,
+                color="#176BAC",
+                line=dict(color="#CDE8F4", width=1.5),
+            ),
+            textfont=dict(color="white", size=14),
+            hovertext=["<b>KDP 研究核心</b><br>结构节点与文献证据的共同中心"],
+            hoverinfo="text",
+            name="KDP研究核心",
+        )
+    )
+
+    # Core -> source lines.
+    xs, ys, zs = [], [], []
+    for n in sc.index:
+        p = structural_pos["S|" + str(n)]
+        pts = _curve_points((0, 0, 0), p, lift=.05, inward=.72, n=18)
+        xs.extend(pts[:, 0].tolist() + [None])
+        ys.extend(pts[:, 1].tolist() + [None])
+        zs.extend(pts[:, 2].tolist() + [None])
+    fig.add_trace(
+        go.Scatter3d(
+            x=xs, y=ys, z=zs,
+            mode="lines",
+            line=dict(color="rgba(225,140,62,.18)", width=1.2),
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+
+    def add_structural_nodes(counts, pos, color, label, prefix):
+        names = list(counts.index)
+        max_count = max(float(counts.max()), 1.0)
+        coords = [pos[n] for n in names]
+        text = []
+        hover = []
+        for i, n in enumerate(names):
+            text.append(n if i < 6 or n == focus_node else "")
+            hover.append(
+                f"<b>{n}</b><br>{label}<br>"
+                f"累计关系证据：<b>{int(counts[n])}</b> 篇"
+            )
+
+        # halo
+        fig.add_trace(
+            go.Scatter3d(
+                x=[p[0] for p in coords],
+                y=[p[1] for p in coords],
+                z=[p[2] for p in coords],
+                mode="markers",
+                marker=dict(
+                    size=[20 + 16 * math.sqrt(float(counts[n]) / max_count) for n in names],
+                    color=_rgba(color, .08),
+                    opacity=1,
+                    line=dict(width=0),
+                ),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+        fig.add_trace(
+            go.Scatter3d(
+                x=[p[0] for p in coords],
+                y=[p[1] for p in coords],
+                z=[p[2] for p in coords],
+                mode="markers+text",
+                text=text,
+                textposition="top center",
+                textfont=dict(color="#DCE8F2", size=10),
+                marker=dict(
+                    size=[11 + 12 * math.sqrt(float(counts[n]) / max_count) for n in names],
+                    color=color,
+                    opacity=.95,
+                    line=dict(color="rgba(255,255,255,.72)", width=.8),
+                ),
+                hovertext=hover,
+                hoverinfo="text",
+                name=label,
+            )
+        )
+
+    add_structural_nodes(sc, source_pos, "#E28A35", "缺陷 / 应力来源", "S")
+    add_structural_nodes(mc, mech_pos, "#7773D8", "局部作用机制", "M")
+    add_structural_nodes(oc, outcome_pos, "#21ADB1", "宏观结果", "O")
+
+    paper_edge_count = 0
+
+    # --------------------------------------------------------
+    # Paper-level evidence cloud: each paper is a real node.
+    # --------------------------------------------------------
+    if len(pw):
+        years = pd.to_numeric(pw.get("年份", pd.Series(index=pw.index)), errors="coerce")
+        y_min = int(years.dropna().min()) if years.notna().any() else 2000
+        y_max = int(years.dropna().max()) if years.notna().any() else y_min + 1
+        year_span = max(1, y_max - y_min)
+
+        paper_coords = []
+        paper_hover = []
+        paper_colors = []
+        paper_sizes = []
+        paper_labels = []
+
+        # One merged edge trace per classification family.
+        edge_xyz = {
+            "S": {"x": [], "y": [], "z": []},
+            "M": {"x": [], "y": [], "z": []},
+            "O": {"x": [], "y": [], "z": []},
+        }
+
+        tier_color = {
+            "S 核心 50": "#F15A9B",
+            "A 重点 150": "#D97AB3",
+            "B 扩展 800": "#9FB5D1",
+        }
+
+        for j, (_, r) in enumerate(pw.iterrows()):
+            s = str(r.get("缺陷/应力来源", ""))
+            m = str(r.get("作用机制", ""))
+            o = str(r.get("宏观结果", ""))
+
+            ps = structural_pos.get("S|" + s)
+            pm = structural_pos.get("M|" + m)
+            po = structural_pos.get("O|" + o)
+            if not (ps and pm and po):
+                continue
+
+            # Paper position is close to the mean direction of its path.
+            v = np.array(ps) + np.array(pm) + np.array(po)
+            norm = float(np.linalg.norm(v))
+            if norm < 1e-8:
+                v = np.array([1.0, 0.0, 0.0])
+                norm = 1.0
+            v = v / norm
+
+            yr = r.get("年份", y_max)
+            try:
+                yr_f = float(yr)
+            except Exception:
+                yr_f = y_max
+            recent = (yr_f - y_min) / year_span
+            radius = 4.15 + .82 * recent
+
+            # deterministic jitter keeps papers from sitting on top of each other
+            angle = j * 2.399963229728653
+            jitter = np.array([
+                .18 * math.cos(angle),
+                .18 * math.sin(angle),
+                .12 * math.sin(angle * .7),
+            ])
+            pp = v * radius + jitter
+            paper_coords.append(pp)
+
+            title = str(r.get("题名", "")).strip()
+            journal = str(r.get("期刊", "")).strip()
+            doi = str(r.get("DOI", "")).strip()
+            tier = str(r.get("V5推荐等级", "")).strip()
+            score = r.get("V5科研优先分", r.get("综合重要度", ""))
+
+            paper_hover.append(
+                f"<b>{title[:120]}</b>"
+                f"<br>{journal} · {r.get('年份','')}"
+                f"<br>等级：{tier or '未分级'}"
+                f"<br>DOI：{doi or '无'}"
+                f"<br><br>{s} → {m} → {o}"
+            )
+            paper_colors.append(tier_color.get(tier, "#B8C5D3"))
+
+            try:
+                score_f = float(score)
+            except Exception:
+                score_f = 0.0
+            paper_sizes.append(3.0 + min(4.5, max(0.0, score_f) / 24.0))
+
+            # Only label the first few highest-ranked papers.
+            paper_labels.append(
+                f"P{j+1}" if j < 8 else ""
+            )
+
+            for key, target in [
+                ("S", ps),
+                ("M", pm),
+                ("O", po),
+            ]:
+                pts = _curve_points(pp, target, lift=.18, inward=.72, n=12)
+                edge_xyz[key]["x"].extend(pts[:, 0].tolist() + [None])
+                edge_xyz[key]["y"].extend(pts[:, 1].tolist() + [None])
+                edge_xyz[key]["z"].extend(pts[:, 2].tolist() + [None])
+                paper_edge_count += 1
+
+        # hundreds of literature lines, but only 3 Plotly traces
+        fig.add_trace(
+            go.Scatter3d(
+                x=edge_xyz["S"]["x"], y=edge_xyz["S"]["y"], z=edge_xyz["S"]["z"],
+                mode="lines",
+                line=dict(color="rgba(226,138,53,.14)", width=1.0),
+                hoverinfo="skip", showlegend=False,
+            )
+        )
+        fig.add_trace(
+            go.Scatter3d(
+                x=edge_xyz["M"]["x"], y=edge_xyz["M"]["y"], z=edge_xyz["M"]["z"],
+                mode="lines",
+                line=dict(color="rgba(119,115,216,.14)", width=1.0),
+                hoverinfo="skip", showlegend=False,
+            )
+        )
+        fig.add_trace(
+            go.Scatter3d(
+                x=edge_xyz["O"]["x"], y=edge_xyz["O"]["y"], z=edge_xyz["O"]["z"],
+                mode="lines",
+                line=dict(color="rgba(33,173,177,.14)", width=1.0),
+                hoverinfo="skip", showlegend=False,
+            )
+        )
+
+        if paper_coords:
+            arr = np.vstack(paper_coords)
+            fig.add_trace(
+                go.Scatter3d(
+                    x=arr[:, 0], y=arr[:, 1], z=arr[:, 2],
+                    mode="markers+text",
+                    text=paper_labels,
+                    textposition="top center",
+                    textfont=dict(color="rgba(244,218,235,.75)", size=8),
+                    marker=dict(
+                        size=paper_sizes,
+                        color=paper_colors,
+                        opacity=.86,
+                        line=dict(color="rgba(255,255,255,.34)", width=.35),
+                    ),
+                    hovertext=paper_hover,
+                    hoverinfo="text",
+                    name="文献证据节点",
+                )
+            )
+
+    structural_links = len(sm) + len(mo) + len(sc)
+    total_links = structural_links + paper_edge_count
+
+    cameras = {
+        "透视": dict(eye=dict(x=1.55, y=1.62, z=1.26), center=dict(x=0, y=0, z=0)),
+        "俯视": dict(eye=dict(x=.04, y=.06, z=2.78), center=dict(x=0, y=0, z=0)),
+        "侧视": dict(eye=dict(x=2.72, y=.10, z=.34), center=dict(x=0, y=0, z=0)),
+    }
+
+    fig.update_layout(
+        paper_bgcolor="#06101D",
+        plot_bgcolor="#06101D",
+        margin=dict(l=0, r=0, t=64, b=0),
+        scene=dict(
+            bgcolor="#06101D",
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            zaxis=dict(visible=False),
+            aspectmode="cube",
+            camera=cameras.get(camera_name, cameras["透视"]),
+            dragmode="orbit",
+        ),
+        legend=dict(
+            orientation="h",
+            y=1.035, x=.02,
+            bgcolor="rgba(4,12,22,.48)",
+            bordercolor="rgba(171,198,222,.12)",
+            borderwidth=1,
+            font=dict(color="#C9D9E8", size=10),
+        ),
+        font=dict(family='Inter,"Microsoft YaHei"', color="#DDE7F4"),
+        annotations=[
+            dict(
+                x=.015, y=.982, xref="paper", yref="paper",
+                showarrow=False, align="left",
+                text=(
+                    "<b>KDP 3D EVIDENCE NETWORK</b>"
+                    f"<br><span style='font-size:10px;color:#88A4BA'>"
+                    f"{'FOCUS · ' + str(focus_node) if focus_node else 'GLOBAL EVIDENCE VIEW'}</span>"
+                ),
+                font=dict(color="#E0ECF7", size=12),
+                bgcolor="rgba(8,20,35,.62)",
+                bordercolor="rgba(122,159,194,.16)",
+                borderpad=8,
+            ),
+            dict(
+                x=.985, y=.982, xref="paper", yref="paper",
+                showarrow=False, align="right",
+                text=(
+                    f"<b>{1+len(sc)+len(mc)+len(oc)+len(pw)}</b> NODES"
+                    f" · <b>{total_links}</b> LINKS"
+                    f" · <b>{len(pw)}</b> PAPERS"
+                ),
+                font=dict(color="#94ADC2", size=10),
+                bgcolor="rgba(8,20,35,.42)",
+                borderpad=6,
+            ),
+        ],
+    )
+
+    return fig, pw, total_links, structural_links
+
+
 def knowledge_graph():
     df = _df()
     page_header(
         "知识图谱",
-        "将KDP文献中的缺陷来源、局部机制与宏观后果组织为可追踪的研究关系网络。",
+        "把KDP文献中的缺陷来源、局部机制、宏观后果与具体论文组织为可回查的证据网络。",
         "KNOWLEDGE GRAPH",
     )
     project_context_strip()
@@ -1363,7 +1865,7 @@ def knowledge_graph():
     # making page/module switching appear frozen.
     section = st.segmented_control(
         "图谱视图",
-        ["研究主线", "3D关系星图", "分类与关系"],
+        ["研究主线", "3D证据图谱", "分类与关系"],
         default="研究主线",
         selection_mode="single",
         label_visibility="collapsed",
@@ -1412,185 +1914,179 @@ def knowledge_graph():
         )
         return
 
-    if section == "3D关系星图":
+    if section == "3D证据图谱":
         section_title(
-            "KDP球壳机制星图",
-            "以三层球壳组织“缺陷/应力来源 → 局部机制 → 宏观结果”，节点大小表示证据量，弧线强度表示关系厚度；聚焦模式可追踪完整机制路径",
+            "KDP三维证据网络",
+            "结构节点展示“缺陷/应力来源 → 局部机制 → 宏观结果”；外层文献节点对应真实论文，并分别连接到其分类路径。",
         )
 
-        c1, c2, c3, c4 = st.columns([1.05, .9, 1.05, .95])
-        relation_limit = c1.slider(
-            "显示关系数",
-            14,
-            min(60, len(chain)),
-            min(34, len(chain)),
-            key="kg_3d_limit",
+        mode_col, rel_col, paper_col, focus_col, view_col = st.columns([1.05, .9, 1.05, 1.05, .85])
+
+        density_mode = mode_col.selectbox(
+            "图谱密度",
+            ["文献证据网", "机制骨架", "全景证据云"],
+            index=0,
+            key="kg_dense_mode",
         )
 
-        max_evidence = max(1, int(chain["文献数"].max()))
-        min_evidence = c2.slider(
-            "最低关系证据",
-            1,
-            min(12, max_evidence),
-            1,
-            key="kg_3d_min_evidence",
+        relation_limit = rel_col.slider(
+            "结构关系",
+            16,
+            min(70, len(chain)),
+            min(40, len(chain)),
+            key="kg_dense_relation_limit",
         )
 
-        focus_layer = c3.selectbox(
+        explicit_papers = work.copy()
+        if "题名" in explicit_papers.columns:
+            explicit_papers = explicit_papers[
+                explicit_papers["题名"].fillna("").astype(str).str.len() > 4
+            ]
+
+        if density_mode == "机制骨架":
+            paper_limit = 0
+            paper_col.caption("文献节点：关闭")
+        else:
+            max_papers = min(400, max(40, len(explicit_papers)))
+            default_papers = min(180 if density_mode == "文献证据网" else 300, max_papers)
+            min_papers = 40 if max_papers >= 40 else 1
+            paper_limit = paper_col.slider(
+                "文献节点",
+                min_papers,
+                max_papers,
+                default_papers,
+                step=20 if max_papers >= 80 else 5,
+                key="kg_dense_paper_limit",
+            )
+
+        focus_layer = focus_col.selectbox(
             "聚焦层",
             ["全局", "缺陷/应力来源", "作用机制", "宏观结果"],
-            key="kg_3d_focus_layer",
+            key="kg_dense_focus_layer",
         )
 
-        camera_name = c4.selectbox(
+        camera_name = view_col.selectbox(
             "视角",
             ["透视", "俯视", "侧视"],
-            key="kg_3d_camera",
+            key="kg_dense_camera",
         )
 
         focus_node = None
         if focus_layer != "全局":
             if focus_layer == "缺陷/应力来源":
-                counts = (
-                    chain.groupby("缺陷/应力来源")["文献数"]
-                    .sum().sort_values(ascending=False)
-                )
+                counts = chain.groupby("缺陷/应力来源")["文献数"].sum().sort_values(ascending=False)
             elif focus_layer == "作用机制":
-                counts = (
-                    chain.groupby("作用机制")["文献数"]
-                    .sum().sort_values(ascending=False)
-                )
+                counts = chain.groupby("作用机制")["文献数"].sum().sort_values(ascending=False)
             else:
-                counts = (
-                    chain.groupby("宏观结果")["文献数"]
-                    .sum().sort_values(ascending=False)
-                )
+                counts = chain.groupby("宏观结果")["文献数"].sum().sort_values(ascending=False)
+
             focus_node = st.selectbox(
                 "聚焦节点",
                 list(counts.index),
-                key="kg_3d_focus_node",
+                key="kg_dense_focus_node",
             )
 
-        legend = pd.DataFrame(
-            [
-                ["缺陷 / 应力来源", "橙色轨道", "材料内部或工艺引入的起因"],
-                ["局部作用机制", "紫蓝轨道", "电子、结构、应力、散射等中间机制"],
-                ["宏观结果", "青绿轨道", "开裂、吸收、LIDT、散射等可观测后果"],
-                ["节点大小", "证据量", "节点累计关联文献越多，尺寸越大"],
-                ["曲线强度", "关系厚度", "两类节点共现/关联文献越多，连线越亮"],
-            ],
-            columns=["图谱元素", "编码方式", "科研含义"],
-        )
+        with st.expander("图谱读法与性能说明", expanded=False):
+            st.markdown(
+                """
+- **橙色节点**：缺陷 / 应力来源  
+- **紫色节点**：局部作用机制  
+- **青绿色节点**：宏观结果  
+- **粉色 / 淡色小节点**：真实文献  
+- **文献节点悬停**：显示题名、期刊、年份、DOI和所属研究路径  
+- **文献到三类结构节点的细线**：表示该论文被归入该“来源—机制—结果”路径  
+- **全景证据云**：可显示数百篇论文，产生数百至上千条文献关系线；为了保证浏览器可用，所有文献连线被合并为少量WebGL trace
+"""
+            )
 
-        with st.expander("图谱读法", expanded=False):
-            st.dataframe(legend, width="stretch", hide_index=True)
-
-        # Load only when user explicitly enters the heavy visualization.
-        if not st.session_state.get("_kg_3d_enabled", False):
+        if not st.session_state.get("_kg_dense_enabled", False):
             st.info(
-                "三维机制星图采用按需加载。点击一次后，本次会话内可以继续切换聚焦节点、证据阈值和视角。"
+                "高密度3D图谱采用按需加载。进入后可在本次会话内调整文献数量、聚焦节点和视角。"
             )
-            if not st.button("进入三维机制星图", type="primary", key="kg_enable_3d"):
+            if not st.button("进入三维证据网络", type="primary", key="kg_dense_enable"):
                 return
-            st.session_state["_kg_3d_enabled"] = True
+            st.session_state["_kg_dense_enabled"] = True
 
-        filtered = chain[chain["文献数"] >= min_evidence].copy()
-        if filtered.empty:
-            st.warning("当前证据阈值下没有可显示的关系。")
-            return
-
-        used_fallback = False
         try:
-            with st.spinner("正在构建三维机制星图…"):
-                fig = _orbital_graph(
-                    filtered,
-                    top_n=relation_limit,
-                    min_evidence=min_evidence,
+            with st.spinner("正在把结构关系与真实文献节点装配为三维证据网络…"):
+                fig, shown_papers, total_links, structural_links = _dense_evidence_globe(
+                    explicit_papers,
+                    chain,
+                    relation_limit=relation_limit,
+                    paper_limit=paper_limit,
                     focus_layer=focus_layer,
                     focus_node=focus_node,
                     camera_name=camera_name,
+                    show_papers=density_mode != "机制骨架",
                 )
         except Exception as exc:
             import logging
-            logging.getLogger(__name__).exception("Advanced 3D graph failed", exc_info=exc)
-            used_fallback = True
-            st.warning("高级三维渲染未通过当前环境兼容检查，已自动切换到轻量兼容模式。")
+            logging.getLogger(__name__).exception("Dense 3D evidence graph failed", exc_info=exc)
+            st.warning("高密度证据网络未通过当前浏览器兼容检查，已切换到轻量机制图谱。")
             fig = _orbital_graph_lite(
-                filtered,
+                chain,
                 top_n=min(relation_limit, 30),
                 camera_name=camera_name,
             )
+            shown_papers = pd.DataFrame()
+            total_links = 0
+            structural_links = 0
 
         st.plotly_chart(
             fig,
             width="stretch",
             theme=None,
-            height=800 if used_fallback else 820,
+            height=860,
             config={
                 "displaylogo": False,
                 "scrollZoom": True,
                 "modeBarButtonsToRemove": ["lasso2d", "select2d"],
                 "toImageButtonOptions": {
                     "format": "png",
-                    "filename": "KDP_三维机制星图",
+                    "filename": "KDP_三维文献证据网络",
                     "scale": 2,
                 },
             },
-            key=f"kg_3d_{relation_limit}_{min_evidence}_{focus_layer}_{focus_node}_{camera_name}_{used_fallback}",
+            key=f"kg_dense_{density_mode}_{relation_limit}_{paper_limit}_{focus_layer}_{focus_node}_{camera_name}",
         )
 
-        # Relationship details: the 3D view is an entry point, not a dead-end.
-        if focus_node:
-            if focus_layer == "缺陷/应力来源":
-                detail = filtered[filtered["缺陷/应力来源"] == focus_node].copy()
-            elif focus_layer == "作用机制":
-                detail = filtered[filtered["作用机制"] == focus_node].copy()
-            else:
-                detail = filtered[filtered["宏观结果"] == focus_node].copy()
+        # Quantitative summary.
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("结构节点", 1 + chain["缺陷/应力来源"].nunique() + chain["作用机制"].nunique() + chain["宏观结果"].nunique())
+        m2.metric("当前文献节点", len(shown_papers))
+        m3.metric("当前关系线", total_links)
+        m4.metric("其中结构关系", structural_links)
 
-            detail = detail.sort_values("文献数", ascending=False).head(18)
-            section_title(
-                f"聚焦关系｜{focus_node}",
-                "3D星图中的聚焦节点对应到具体研究路径，便于继续回查文献和设计验证方案",
-            )
-            if len(detail):
-                detail["研究路径"] = (
-                    detail["缺陷/应力来源"]
-                    + " → "
-                    + detail["作用机制"]
-                    + " → "
-                    + detail["宏观结果"]
-                )
-                st.dataframe(
-                    detail[["研究路径", "文献数"]],
-                    width="stretch",
-                    hide_index=True,
-                    height=min(520, 80 + 38 * len(detail)),
-                )
+        section_title(
+            "当前图谱中的文献证据",
+            "3D图不再只展示抽象类别；这里列出当前被绘制为文献节点的真实论文。",
+        )
 
-                focus_query = f"{focus_node} KDP mechanism"
-                st.caption(
-                    f"下一步可进入“文献中心/专题调研”继续检索：{focus_query}"
-                )
-        else:
-            strongest = filtered.sort_values("文献数", ascending=False).head(12).copy()
-            strongest["研究路径"] = (
-                strongest["缺陷/应力来源"]
+        if len(shown_papers):
+            table = shown_papers.copy()
+            table["研究路径"] = (
+                table["缺陷/应力来源"].astype(str)
                 + " → "
-                + strongest["作用机制"]
+                + table["作用机制"].astype(str)
                 + " → "
-                + strongest["宏观结果"]
+                + table["宏观结果"].astype(str)
             )
-            section_title(
-                "当前最强研究路径",
-                "作为3D图谱的定量补充，避免视觉展示脱离具体证据规模",
-            )
+            cols = [
+                c for c in
+                ["题名", "年份", "期刊", "DOI", "V5推荐等级", "研究路径"]
+                if c in table.columns
+            ]
             st.dataframe(
-                strongest[["研究路径", "文献数"]],
+                table[cols].head(80),
                 width="stretch",
                 hide_index=True,
-                height=500,
+                height=540,
             )
+
+            if len(shown_papers) > 80:
+                st.caption(f"3D图当前包含 {len(shown_papers)} 篇文献；表格先显示排名前80篇。")
+        else:
+            soft_note("当前为机制骨架模式，未加载文献节点。切换到“文献证据网”或“全景证据云”可查看真实论文节点。")
 
         return
 
