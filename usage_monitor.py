@@ -2,22 +2,44 @@
 from __future__ import annotations
 
 from typing import Any, Dict
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
 
-# DeepSeek 官方人民币公开价（2026-08）：
-# 单位：元 / 100万 tokens
-DEFAULT_PRICING = {
-    "flash": {
-        "cache_hit_input": 0.02,
-        "cache_miss_input": 1.00,
-        "output": 2.00,
+# 费用显示优先采用“用户 2026-08-17 DeepSeek 官方账单导出”反推的实际计费档位。
+# 账单中可直接验证：
+# - 13:00–14:00 Pro：未命中 4.5 元/M，输出 13.5 元/M
+# - 14:00–18:00 Pro：命中 0.30 元/M，未命中 9 元/M，输出 27 元/M
+# - 14:00–18:00 Flash：未命中 3 元/M，输出 9 元/M
+#
+# 因账单在 14:00 出现精确 2× 切换，这里按峰谷计价处理。
+# Flash 谷时及部分缓存命中价格按同一 2× 结构推定；最终仍以官方账单为准。
+ACCOUNT_PRICING = {
+    "offpeak": {
+        "flash": {
+            "cache_hit_input": 0.12,
+            "cache_miss_input": 1.50,
+            "output": 4.50,
+        },
+        "pro": {
+            "cache_hit_input": 0.15,
+            "cache_miss_input": 4.50,
+            "output": 13.50,
+        },
     },
-    "pro": {
-        "cache_hit_input": 0.025,
-        "cache_miss_input": 3.00,
-        "output": 6.00,
+    "peak": {
+        "flash": {
+            "cache_hit_input": 0.24,
+            "cache_miss_input": 3.00,
+            "output": 9.00,
+        },
+        "pro": {
+            "cache_hit_input": 0.30,
+            "cache_miss_input": 9.00,
+            "output": 27.00,
+        },
     },
 }
 
@@ -27,69 +49,6 @@ def _secret_float(name: str, default: float) -> float:
         return float(st.secrets.get(name, default))
     except Exception:
         return float(default)
-
-
-def _as_dict(obj: Any) -> Dict:
-    if obj is None:
-        return {}
-    if isinstance(obj, dict):
-        return obj
-    if hasattr(obj, "model_dump"):
-        try:
-            return obj.model_dump()
-        except Exception:
-            pass
-    out = {}
-    for key in [
-        "prompt_tokens",
-        "completion_tokens",
-        "total_tokens",
-        "prompt_cache_hit_tokens",
-        "prompt_cache_miss_tokens",
-        "reasoning_tokens",
-        "prompt_tokens_details",
-        "completion_tokens_details",
-    ]:
-        try:
-            value = getattr(obj, key)
-        except Exception:
-            value = None
-        if value is not None:
-            out[key] = value
-    return out
-
-
-def _model_family(model: str) -> str:
-    m = str(model or "").lower()
-    if (
-        "flash" in m
-        or m in {"deepseek-chat", "deepseek-reasoner"}
-    ):
-        return "flash"
-    return "pro"
-
-
-def _pricing(model: str) -> Dict[str, float]:
-    family = _model_family(model)
-    defaults = DEFAULT_PRICING[family]
-
-    prefix = "DEEPSEEK_FLASH" if family == "flash" else "DEEPSEEK_PRO"
-
-    # 可在 Secrets 中覆盖价格，未来 DeepSeek 调价时不用改代码。
-    return {
-        "cache_hit_input": _secret_float(
-            f"{prefix}_CACHE_HIT_CNY_PER_M",
-            defaults["cache_hit_input"],
-        ),
-        "cache_miss_input": _secret_float(
-            f"{prefix}_CACHE_MISS_CNY_PER_M",
-            defaults["cache_miss_input"],
-        ),
-        "output": _secret_float(
-            f"{prefix}_OUTPUT_CNY_PER_M",
-            defaults["output"],
-        ),
-    }
 
 
 def summarize_usage(model: str, usage: Any) -> Dict[str, Any]:
@@ -143,6 +102,8 @@ def summarize_usage(model: str, usage: Any) -> Dict[str, Any]:
         "input_miss_cost": float(input_miss_cost),
         "output_cost": float(output_cost),
         "price": price,
+        "billing_period": price.get("period", "offpeak"),
+        "pricing_basis": "2026-08-17 DeepSeek账单校准",
     }
 
 
@@ -240,8 +201,10 @@ def render_deepseek_usage(usage: Dict[str, Any] | None = None):
         miss = int(usage.get("cache_miss_tokens", 0))
         reasoning = int(usage.get("reasoning_tokens", 0))
 
+        period_cn = "峰时" if usage.get("billing_period") == "peak" else "谷时"
         details = (
             f"模型：**{model}**　｜　"
+            f"计费档位：**{period_cn}（账单校准）**　｜　"
             f"缓存未命中：**{miss:,} tokens**"
         )
         if reasoning:
@@ -258,6 +221,6 @@ def render_deepseek_usage(usage: Dict[str, Any] | None = None):
             )
 
         st.caption(
-            "费用为前端估算值；DeepSeek 控制台账单存在统计延迟，"
-            "最终扣费以 DeepSeek 官方用量页面为准。"
+            "费用根据 2026-08-17 官方账单导出的实际 price 字段校准，并按北京时间峰/谷档估算；"
+            "API 本身只返回 Tokens、不返回最终人民币扣费。最终金额仍以 DeepSeek 官方账单为准。"
         )
