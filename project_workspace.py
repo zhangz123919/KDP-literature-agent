@@ -60,11 +60,38 @@ def _summary_table(rows):
 def project_workspace_page():
     project = ensure_default_project()
     page_header(
-        "研究项目工作区",
-        "让文献、假设、实验、诊断、理论计算和研究决策围绕同一个科学问题共享记忆，而不是各模块各做各的。",
-        "PROJECT RESEARCH WORKSPACE",
+        "研究总控台",
+        "它本身不替代文献检索、实验或计算；它负责让所有模块围绕同一个KDP科学问题共享上下文、保存关键记录，并知道研究下一步走到哪里。",
+        "PROJECT RESEARCH HUB",
     )
     project_context_strip(show_security=True)
+
+    section_title("这个页面到底有什么用？", "把原本彼此独立的页面变成同一个研究项目中的连续步骤")
+    st.markdown(
+        """
+**研究总控台 = 全站共享记忆 + 研究进度中枢。**
+
+- 在**文献中心**找到的重要论文，可以保存成当前项目的“证据”；
+- 在**开裂诊断**得到的根因排序，可以保存成“诊断记录”；
+- 在**对照实验设计**形成的方案，可以保存成“实验方案”；
+- 在**实验记录与数据积累**中的真实实验，可以保存成“实验记录”；
+- 在**理论计算规划与分析**中的任务和结果，可以保存成“计算任务/计算结果”；
+- **AI科研助手、研究方向决策**以后读取的是这些已经沉淀的项目上下文，而不是每次从零开始。
+"""
+    )
+
+    flow = pd.DataFrame(
+        [
+            ["文献中心", "核心论文 / 方法依据", "文献证据", "诊断、计算、AI、方向决策"],
+            ["开裂诊断", "风险排序 / 根因假设", "诊断记录", "对照实验、下一步验证"],
+            ["对照实验设计", "变量、对照组、判据", "实验方案", "实验研究库"],
+            ["实验记录与数据积累", "真实条件 / 现象 / 失败", "受保护实验索引", "历史比较、未来机器学习"],
+            ["理论计算规划与分析", "模型、任务、结果", "计算任务 / 结果", "AI综合、机制验证"],
+            ["AI科研助手", "综合分析 / 下一步建议", "AI分析", "项目决策与报告"],
+        ],
+        columns=["模块", "产生什么", "保存到项目中的记忆", "以后由谁调用"],
+    )
+    st.dataframe(flow, width="stretch", hide_index=True, height=286)
 
     with st.expander("项目管理", expanded=False):
         projects = list_projects()
@@ -98,7 +125,7 @@ def project_workspace_page():
         [
             {"label": "科学假设", "value": counts.get("hypothesis", 0), "note": "可验证/可否证", "accent": COLORS["primary"]},
             {"label": "文献证据", "value": counts.get("evidence", 0), "note": "从文献中心沉淀", "accent": COLORS["teal"]},
-            {"label": "实验记录", "value": counts.get("experiment", 0), "note": "真实实验历史", "accent": COLORS["orange"]},
+            {"label": "受保护实验", "value": counts.get("experiment", 0), "note": "详细数据需二次解锁", "accent": COLORS["orange"]},
             {"label": "诊断与方案", "value": counts.get("diagnosis", 0) + counts.get("experiment_plan", 0), "note": "从问题到验证", "accent": COLORS["cyan"]},
             {"label": "理论计算", "value": counts.get("theory_task", 0) + counts.get("theory_result", 0), "note": "任务与结果闭环", "accent": COLORS["violet"]},
             {"label": "方向决策", "value": counts.get("direction_decision", 0), "note": "保留关键选择", "accent": COLORS["green"]},
@@ -140,7 +167,7 @@ def project_workspace_page():
         if len(latest):
             st.dataframe(latest, width="stretch", hide_index=True, height=520)
         else:
-            soft_note("当前项目还没有沉淀记录。可以先从文献中心加入证据，或在这里创建第一条假设。")
+            soft_note("当前项目还没有沉淀记录。建议从“文献中心加入1篇证据 → 建立1条假设 → 生成1个验证实验/计算任务”开始，随后这个页面就会自动汇总整个研究链。")
         return
 
     if section == "科学假设":
@@ -187,12 +214,12 @@ def project_workspace_page():
         exp = list_items("experiment")
         plans = list_items("experiment_plan")
         diags = list_items("diagnosis")
-        section_title("实验链", "实验记录、诊断和对照方案在同一项目下连续积累")
+        section_title("实验链", "这里只显示受保护实验索引、诊断和实验方案；真实配方、工艺参数、现象结果需到“实验记录与数据积累”二次解锁后查看")
         table = _summary_table(exp + plans + diags)
         if len(table):
             st.dataframe(table.sort_values("时间", ascending=False), width="stretch", hide_index=True, height=560)
         else:
-            soft_note("尚无实验记录。实验研究库在公开模式下只做临时演示；机密数据应在本地私密模式使用。")
+            soft_note("尚无实验记录。可进入“实验记录与数据积累”创建受密码保护的实验保险库并开始真实数据积累。")
         return
 
     if section == "理论计算":

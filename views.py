@@ -16,6 +16,7 @@ from engine import CORE_TOPICS, TOPICS, load_data, material_scope, offline_summa
 from reports import docx_bytes, excel_bytes
 from security import safe_error
 from usage_monitor import render_deepseek_usage
+from experiment_vault import list_records as vault_list_records, vault_unlocked
 from research_memory import (
     add_item,
     build_project_context,
@@ -1128,6 +1129,63 @@ def crack_diagnosis():
 
     result = diagnose(states)
 
+    # ----------------------------------------------------------
+    # 已解锁的真实历史实验：只在本地页面用于统计，不自动发送给外部AI
+    # ----------------------------------------------------------
+    historical_rows = []
+    if vault_unlocked():
+        vrecords = vault_list_records()
+        for rec in vrecords:
+            p = rec.get("payload", {}) or {}
+            historical_rows.append(
+                {
+                    "实验ID": rec.get("experiment_id", ""),
+                    "开裂": p.get("cracked", ""),
+                    "过饱和度": p.get("supersaturation_pct"),
+                    "降温速率": p.get("cooling_rate"),
+                    "生长时间": p.get("growth_hours"),
+                    "pH": p.get("ph"),
+                    "固定方式": p.get("fixation", ""),
+                    "籽晶取向": p.get("seed_orientation", ""),
+                    "籽晶质量": p.get("seed_quality", ""),
+                }
+            )
+
+    historical = pd.DataFrame(historical_rows)
+
+    if len(historical):
+        labelled = historical[historical["开裂"].isin(["是", "否"])].copy()
+        st.info(
+            f"已安全调用当前项目 {len(historical)} 条受保护历史实验用于页面内统计；"
+            f"其中 {len(labelled)} 条有明确开裂标签。具体实验参数不会自动发送给DeepSeek。"
+        )
+
+        assoc = []
+        for col, label in [
+            ("过饱和度", "过饱和度"),
+            ("降温速率", "降温速率"),
+            ("生长时间", "生长时间"),
+            ("pH", "pH"),
+        ]:
+            if col not in labelled.columns:
+                continue
+            x = pd.to_numeric(labelled[col], errors="coerce")
+            a = x[labelled["开裂"] == "是"].dropna()
+            b = x[labelled["开裂"] == "否"].dropna()
+            if len(a) and len(b):
+                assoc.append(
+                    {
+                        "历史变量": label,
+                        "开裂组中位数": round(float(a.median()), 4),
+                        "未开裂组中位数": round(float(b.median()), 4),
+                        "样本数": f"{len(a)} / {len(b)}",
+                        "解释": "仅为历史关联，不代表因果",
+                    }
+                )
+        if assoc:
+            with st.expander("历史实验关联信号", expanded=False):
+                st.dataframe(pd.DataFrame(assoc), width="stretch", hide_index=True)
+
     # 为风险最高的变量绑定独立本地文献证据。
     support_rows = []
     top_variables = result[result["风险分"] > 0].head(5)
@@ -1365,8 +1423,24 @@ def experiment_design():
             default=["降温速率", "籽晶固定方式", "过饱和度"],
         )
 
+        baseline_default = ""
+        if vault_unlocked():
+            history = vault_list_records()
+            if history:
+                p = (history[0].get("payload", {}) or {})
+                baseline_default = (
+                    f"参考实验 {history[0].get('experiment_id','')}；"
+                    f"过饱和度={p.get('supersaturation_pct','')}；"
+                    f"生长温度={p.get('growth_temp_start','')}→{p.get('growth_temp_end','')}℃；"
+                    f"降温速率={p.get('cooling_rate','')}℃/h；"
+                    f"籽晶取向={p.get('seed_orientation','')}；"
+                    f"固定方式={p.get('fixation','')}。"
+                )
+                st.caption("已从最近一条受保护实验记录生成基线草案；这里只用于当前页面，不自动发送给外部AI。")
+
         baseline = st.text_area(
             "当前标准流程 / 基线",
+            value=baseline_default,
             placeholder="填写当前生长、取晶和冷却流程；越具体，后续越容易真正做到单变量。",
         )
 
@@ -1442,33 +1516,44 @@ def experiment_design():
 def theory():
     df = _df()
     page_header(
-        "理论计算工作流",
-        "网页负责把科学问题、文献证据、建模步骤、收敛检查和结果解释串起来；真正的数值求解仍由QE/VASP/LAMMPS/COMSOL等外部软件完成。",
-        "COMPUTATIONAL RESEARCH WORKFLOW",
+        "理论计算规划与分析",
+        "这里不是在线VASP/QE。它负责回答“为什么算、怎么算、参数依据是什么、结果是否可信、下一步算什么”；真正求解仍由QE/VASP/LAMMPS/COMSOL等专业软件完成。",
+        "COMPUTATIONAL PLANNING & ANALYSIS",
     )
     project_context_strip()
 
+    section_title("这个模块具体帮你省掉什么？", "把“问AI得到一段建议”升级为可以保存、复用、验证的计算研究流程")
     insight_strip(
         [
             {
-                "kicker": "PLATFORM ROLE",
-                "title": "研究流程与记忆",
-                "note": "定义问题、选模型、绑定文献、生成任务卡、保存结果",
+                "kicker": "BEFORE SOLVING",
+                "title": "把问题变成计算任务",
+                "note": "选DFT/MD/FEA、模型对象、外部软件，自动绑定KDP方法文献与收敛检查",
                 "accent": COLORS["primary"],
             },
             {
-                "kicker": "SOLVER ROLE",
-                "title": "外部计算软件",
-                "note": "QE/VASP/LAMMPS/COMSOL等负责真正求解，不由网页假装完成",
+                "kicker": "SOLVING",
+                "title": "专业软件真正计算",
+                "note": "QE/VASP/LAMMPS/COMSOL运行在本机/服务器；网页不伪装成数值求解器",
                 "accent": COLORS["orange"],
             },
             {
-                "kicker": "AI ROLE",
-                "title": "解释与排错",
-                "note": "辅助参数依据、报错诊断、结果比较和下一步计算设计",
+                "kicker": "AFTER SOLVING",
+                "title": "结果初检、比较与回填",
+                "note": "检查是否收敛/报错，把关键输出与文献、实验、研究假设重新联系起来",
                 "accent": COLORS["teal"],
             },
         ]
+    )
+
+    st.markdown(
+        """
+**一个实际例子：** 研究“KDP氢空位是否引入缺陷态”时，这里负责  
+`研究问题 → 找KDP缺陷计算文献 → 建立完美/缺陷模型路线 → 列出QE/VASP所需输入与收敛测试 → 保存计算任务`；  
+你去服务器运行真正的QE/VASP后，再把输出带回来做**收敛/报错初检、结果比较和项目记忆回填**。
+
+所以它的价值不是代替软件，而是防止“软件会点，但科学问题、参数依据、验证流程和结果归档彼此脱节”。
+"""
     )
 
     with st.container(border=True):
@@ -1593,6 +1678,36 @@ def theory():
         "checklist": file_checklists.get(software, []),
     }
 
+    task_card = [
+        "# KDP理论计算任务卡",
+        "",
+        f"- 计算类型：{method}",
+        f"- 研究对象：{target}",
+        f"- 外部求解器：{software}",
+        f"- 科学目标：{goal}",
+        "",
+        "## 主流程",
+    ]
+    task_card += [f"- **{a}**：{b}" for a, b in workflows[method]]
+    task_card += ["", "## 输入/归档清单"]
+    task_card += [f"- **{a}**：{b}" for a, b in file_checklists.get(software, [])]
+    task_card += [
+        "",
+        "## 科学边界",
+        "- 本任务卡不是可直接运行的输入文件。",
+        "- 真正计算必须在对应求解器中完成。",
+        "- 截断能、k点、超胞、势函数/赝势、材料参数等必须做体系相关验证，不能照抄默认值。",
+    ]
+    task_card_text = "\n".join(task_card)
+
+    d1, d2, d3 = st.columns([1, 1, 1])
+    d1.download_button(
+        "下载计算任务卡.md",
+        task_card_text.encode("utf-8"),
+        file_name="KDP_理论计算任务卡.md",
+        mime="text/markdown",
+    )
+
     c1, c2 = st.columns(2)
     if c1.button("保存计算任务到当前研究项目"):
         add_item(
@@ -1624,6 +1739,56 @@ def theory():
                 render_deepseek_usage()
             except Exception as exc:
                 safe_error("AI 服务暂时不可用，详细错误已记录。请稍后重试。", exc)
+
+    section_title("外部计算输出本地初检", "先在浏览器会话里做最基础的完成/报错检查；不会把这段输出自动发送给DeepSeek")
+    output_text = st.text_area(
+        "粘贴非机密输出片段（例如QE .out / VASP OUTCAR关键部分）",
+        height=140,
+        placeholder="公开网站不要粘贴机密计算参数或未公开数据。真实项目建议在本地私密版使用。",
+        key="solver_output_quick_check",
+    )
+    if st.button("本地初检输出", key="solver_output_check_btn"):
+        text = output_text or ""
+        low = text.lower()
+        rows = []
+
+        if "Quantum ESPRESSO" in software:
+            done = "job done" in low
+            bad = (
+                "convergence not achieved" in low
+                or "error in routine" in low
+                or "%%%%%%%%%%%%" in text
+            )
+            energies = re.findall(r"!\\s+total energy\\s+=\\s+([-+0-9.eEdD]+)\\s+Ry", text)
+            rows.append(["作业是否正常结束", "是" if done else "未确认", "查找 JOB DONE"])
+            rows.append(["明显报错/未收敛", "有" if bad else "未检出", "仍需人工核对完整输出"])
+            rows.append(["提取到总能量", f"{len(energies)} 个" if energies else "0 个", energies[-1] + " Ry" if energies else "—"])
+
+        elif "VASP" in software:
+            done = "reached required accuracy" in low or "general timing and accounting" in low
+            bad_words = ["brmix", "zbrent", "edddav", "error"]
+            bad_hit = [x for x in bad_words if x in low]
+            energies = re.findall(r"free\\s+energy\\s+TOTEN\\s+=\\s+([-+0-9.eE]+)\\s+eV", text)
+            rows.append(["达到优化/结束标志", "是" if done else "未确认", "需结合任务类型判断"])
+            rows.append(["常见错误关键词", ", ".join(bad_hit) if bad_hit else "未检出", "关键词初筛，不等于完整诊断"])
+            rows.append(["提取到TOTEN", f"{len(energies)} 个" if energies else "0 个", energies[-1] + " eV" if energies else "—"])
+
+        elif "LAMMPS" in software:
+            done = "total wall time" in low or "loop time of" in low
+            errs = re.findall(r"ERROR[^\\n]*", text, flags=re.I)
+            rows.append(["运行结束标志", "是" if done else "未确认", "查找 wall time / loop time"])
+            rows.append(["ERROR", errs[0][:120] if errs else "未检出", "需结合完整log判断"])
+
+        else:
+            errs = [line.strip() for line in text.splitlines() if "error" in line.lower() or "failed" in line.lower()]
+            rows.append(["通用错误关键词", errs[0][:160] if errs else "未检出", "COMSOL/ANSYS仍应以求解器日志与收敛图为准"])
+
+        st.dataframe(
+            pd.DataFrame(rows, columns=["检查项", "结果", "说明"]),
+            width="stretch",
+            hide_index=True,
+        )
+        st.caption("这是离线文本初检，不是完整的数值可靠性判定。是否可信仍需检查收敛测试、模型假设和物理验证。")
 
     with st.expander("计算结果回填", expanded=False):
         tasks = list_items("theory_task")

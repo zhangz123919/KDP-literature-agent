@@ -64,8 +64,8 @@ def storage_security_note() -> str:
             "仍需由本机/内网负责磁盘加密、账户权限、备份和物理安全。"
         )
     return (
-        "当前为会话临时模式：刷新/休眠后记录可能消失，不写入持久数据库。"
-        "请勿在公开部署中录入真实机密实验数据。"
+        "普通项目记忆当前仍为会话临时模式；真实实验参数请只进入“实验数据保险库”。"
+        "保险库使用独立密码、会话隔离和加密备份，且不会自动发送给外部AI。"
     )
 
 
@@ -327,6 +327,63 @@ def add_item(
     return item
 
 
+
+def update_item(
+    item_id: str,
+    title: Optional[str] = None,
+    summary: Optional[str] = None,
+    payload: Optional[Dict[str, Any]] = None,
+    status: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """更新普通项目记忆中的非机密索引/记录。"""
+    ts = _now()
+
+    if private_mode_enabled():
+        sets = ["updated_at = ?"]
+        vals: List[Any] = [ts]
+
+        if title is not None:
+            sets.append("title = ?")
+            vals.append(str(title))
+        if summary is not None:
+            sets.append("summary = ?")
+            vals.append(str(summary))
+        if payload is not None:
+            sets.append("payload_json = ?")
+            vals.append(json.dumps(payload, ensure_ascii=False, default=str))
+        if status is not None:
+            sets.append("status = ?")
+            vals.append(str(status))
+
+        vals.append(item_id)
+        with _connect() as conn:
+            conn.execute(
+                f"UPDATE items SET {', '.join(sets)} WHERE id = ?",
+                vals,
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM items WHERE id = ?",
+                (item_id,),
+            ).fetchone()
+        return _decode_db_item(row) if row else None
+
+    _session_init()
+    for x in st.session_state["_kdp_memory_items"]:
+        if x.get("id") == item_id:
+            if title is not None:
+                x["title"] = str(title)
+            if summary is not None:
+                x["summary"] = str(summary)
+            if payload is not None:
+                x["payload"] = payload
+            if status is not None:
+                x["status"] = str(status)
+            x["updated_at"] = ts
+            return x
+    return None
+
+
 def _decode_db_item(row) -> Dict[str, Any]:
     d = dict(row)
     try:
@@ -475,7 +532,7 @@ def build_project_context(for_external_ai: bool = False, max_chars: int = 6500) 
     labels = {
         "hypothesis": "科学假设",
         "evidence": "已保存证据",
-        "experiment": "实验记录",
+        "experiment": "受保护实验索引",
         "experiment_plan": "实验方案",
         "diagnosis": "诊断记录",
         "theory_task": "理论计算任务",

@@ -6,6 +6,7 @@ from ui import apply_theme, sidebar_ai_status, sidebar_brand
 from security import safe_page, sidebar_security
 from direction_review import direction_review_page
 from experiment_lab import experiment_lab_page
+from experiment_vault import sidebar_vault_status
 from project_workspace import project_workspace_page
 from research_memory import sidebar_project_switcher
 from views import (
@@ -45,7 +46,7 @@ pages = {
         ),
         st.Page(
             safe_page(project_workspace_page),
-            title="研究项目工作区",
+            title="研究总控台",
             icon=":material/account_tree:",
             url_path="project",
         ),
@@ -97,13 +98,13 @@ pages = {
         ),
         st.Page(
             safe_page(experiment_lab_page),
-            title="实验研究库",
+            title="实验记录与数据积累",
             icon=":material/database:",
             url_path="experiment-log",
         ),
         st.Page(
             safe_page(theory),
-            title="理论计算工作流",
+            title="理论计算规划与分析",
             icon=":material/science:",
             url_path="theory",
         ),
@@ -145,5 +146,6 @@ pg = st.navigation(
 ok, model = api_status()
 sidebar_ai_status(ok, model)
 sidebar_security()
+sidebar_vault_status()
 
 pg.run()
