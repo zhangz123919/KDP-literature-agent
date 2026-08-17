@@ -5,6 +5,8 @@ from diagnosis import VARIABLES, diagnose, experiment_matrix
 from agent import api_status, run_agent, stream_agent
 from reports import excel_bytes, docx_bytes
 import plotly.express as px
+import plotly.graph_objects as go
+import numpy as np
 
 st.set_page_config(
     page_title="KDP/DKDP科研智能体",
@@ -88,6 +90,505 @@ def evidence_table(data, height=None):
         hide_index=True,
         height=height,
     )
+
+
+# =========================
+# 知识图谱可视化辅助函数
+# =========================
+
+KG_UNCERTAIN = {
+    "基础物性/其他",
+    "机制未明确",
+    "结果未明确",
+    "未命中",
+    "",
+}
+
+KG_CORE_RAW_KEYWORDS = [
+    "缺陷", "空位", "杂质", "掺杂", "包裹体", "散射",
+    "位错", "生长", "过饱和", "加工", "表面", "亚表面",
+    "激光损伤", "损伤", "LIDT", "裂纹", "开裂", "应力",
+    "吸收", "光热", "氢键", "质子", "籽晶", "固定",
+    "DFT", "第一性原理", "分子动力学", "有限元",
+]
+
+
+def _kg_fibonacci_sphere(n, radius, phase=0.0):
+    """在球面上均匀放置 n 个节点。"""
+    if n <= 0:
+        return []
+
+    points = []
+    golden = np.pi * (3.0 - np.sqrt(5.0))
+
+    for i in range(n):
+        y = 1.0 - 2.0 * (i + 0.5) / n
+        ring = np.sqrt(max(0.0, 1.0 - y * y))
+        theta = golden * i + phase
+        x = np.cos(theta) * ring
+        z = np.sin(theta) * ring
+        points.append(
+            (
+                radius * x,
+                radius * y,
+                radius * z,
+            )
+        )
+
+    return points
+
+
+def _kg_make_sankey(chain):
+    """来源 → 机制 → 后果 的聚焦型桑基图。"""
+    sm = (
+        chain.groupby(
+            ["缺陷/应力来源", "作用机制"],
+            as_index=False,
+        )["文献数"]
+        .sum()
+    )
+
+    mo = (
+        chain.groupby(
+            ["作用机制", "宏观结果"],
+            as_index=False,
+        )["文献数"]
+        .sum()
+    )
+
+    sources = list(
+        chain["缺陷/应力来源"]
+        .drop_duplicates()
+    )
+    mechanisms = list(
+        chain["作用机制"]
+        .drop_duplicates()
+    )
+    outcomes = list(
+        chain["宏观结果"]
+        .drop_duplicates()
+    )
+
+    labels = sources + mechanisms + outcomes
+    node_index = {
+        label: i
+        for i, label in enumerate(labels)
+    }
+
+    link_source = []
+    link_target = []
+    link_value = []
+    link_hover = []
+
+    for _, row in sm.iterrows():
+        link_source.append(
+            node_index[row["缺陷/应力来源"]]
+        )
+        link_target.append(
+            node_index[row["作用机制"]]
+        )
+        link_value.append(
+            int(row["文献数"])
+        )
+        link_hover.append(
+            f"{row['缺陷/应力来源']} → {row['作用机制']}：{int(row['文献数'])}篇"
+        )
+
+    for _, row in mo.iterrows():
+        link_source.append(
+            node_index[row["作用机制"]]
+        )
+        link_target.append(
+            node_index[row["宏观结果"]]
+        )
+        link_value.append(
+            int(row["文献数"])
+        )
+        link_hover.append(
+            f"{row['作用机制']} → {row['宏观结果']}：{int(row['文献数'])}篇"
+        )
+
+    node_colors = (
+        ["#E76F51"] * len(sources)
+        + ["#457B9D"] * len(mechanisms)
+        + ["#2A9D8F"] * len(outcomes)
+    )
+
+    fig = go.Figure(
+        data=[
+            go.Sankey(
+                arrangement="snap",
+                node=dict(
+                    pad=18,
+                    thickness=22,
+                    line=dict(
+                        color="rgba(80,80,80,0.25)",
+                        width=0.6,
+                    ),
+                    label=labels,
+                    color=node_colors,
+                    hovertemplate="%{label}<extra></extra>",
+                ),
+                link=dict(
+                    source=link_source,
+                    target=link_target,
+                    value=link_value,
+                    customdata=link_hover,
+                    hovertemplate="%{customdata}<extra></extra>",
+                ),
+            )
+        ]
+    )
+
+    fig.update_layout(
+        height=660,
+        margin=dict(
+            l=20,
+            r=20,
+            t=30,
+            b=20,
+        ),
+        font=dict(
+            size=14,
+        ),
+    )
+
+    return fig
+
+
+def _kg_make_3d_ball(chain, max_relations=36):
+    """
+    立体球状关系图：
+    中心 = KDP/DKDP开裂与缺陷研究
+    第一层球壳 = 缺陷/应力来源
+    第二层球壳 = 局部机制
+    第三层球壳 = 宏观后果
+    """
+    top_chain = (
+        chain.sort_values(
+            "文献数",
+            ascending=False,
+        )
+        .head(max_relations)
+        .copy()
+    )
+
+    source_counts = (
+        top_chain.groupby(
+            "缺陷/应力来源"
+        )["文献数"]
+        .sum()
+        .sort_values(
+            ascending=False
+        )
+    )
+
+    mech_counts = (
+        top_chain.groupby(
+            "作用机制"
+        )["文献数"]
+        .sum()
+        .sort_values(
+            ascending=False
+        )
+    )
+
+    outcome_counts = (
+        top_chain.groupby(
+            "宏观结果"
+        )["文献数"]
+        .sum()
+        .sort_values(
+            ascending=False
+        )
+    )
+
+    source_nodes = list(source_counts.index)
+    mech_nodes = list(mech_counts.index)
+    outcome_nodes = list(outcome_counts.index)
+
+    positions = {
+        "KDP/DKDP开裂与缺陷": (
+            0.0,
+            0.0,
+            0.0,
+        )
+    }
+
+    for name, xyz in zip(
+        source_nodes,
+        _kg_fibonacci_sphere(
+            len(source_nodes),
+            1.65,
+            0.0,
+        ),
+    ):
+        positions[
+            "S|" + name
+        ] = xyz
+
+    for name, xyz in zip(
+        mech_nodes,
+        _kg_fibonacci_sphere(
+            len(mech_nodes),
+            3.15,
+            0.8,
+        ),
+    ):
+        positions[
+            "M|" + name
+        ] = xyz
+
+    for name, xyz in zip(
+        outcome_nodes,
+        _kg_fibonacci_sphere(
+            len(outcome_nodes),
+            4.65,
+            1.6,
+        ),
+    ):
+        positions[
+            "O|" + name
+        ] = xyz
+
+    # 边：中心→来源
+    edge_rows = []
+
+    for name, count in source_counts.items():
+        edge_rows.append(
+            (
+                "KDP/DKDP开裂与缺陷",
+                "S|" + name,
+                int(count),
+                f"中心 → {name}",
+            )
+        )
+
+    # 来源→机制
+    sm = (
+        top_chain.groupby(
+            ["缺陷/应力来源", "作用机制"],
+            as_index=False,
+        )["文献数"]
+        .sum()
+    )
+
+    for _, row in sm.iterrows():
+        edge_rows.append(
+            (
+                "S|" + row["缺陷/应力来源"],
+                "M|" + row["作用机制"],
+                int(row["文献数"]),
+                f"{row['缺陷/应力来源']} → {row['作用机制']}",
+            )
+        )
+
+    # 机制→后果
+    mo = (
+        top_chain.groupby(
+            ["作用机制", "宏观结果"],
+            as_index=False,
+        )["文献数"]
+        .sum()
+    )
+
+    for _, row in mo.iterrows():
+        edge_rows.append(
+            (
+                "M|" + row["作用机制"],
+                "O|" + row["宏观结果"],
+                int(row["文献数"]),
+                f"{row['作用机制']} → {row['宏观结果']}",
+            )
+        )
+
+    max_edge = max(
+        [x[2] for x in edge_rows],
+        default=1,
+    )
+
+    fig = go.Figure()
+
+    # 用多条独立线段绘制关系，宽度随文献量变化。
+    for start, end, weight, desc in edge_rows:
+        x0, y0, z0 = positions[start]
+        x1, y1, z1 = positions[end]
+
+        fig.add_trace(
+            go.Scatter3d(
+                x=[x0, x1],
+                y=[y0, y1],
+                z=[z0, z1],
+                mode="lines",
+                line=dict(
+                    width=1.0
+                    + 6.0
+                    * np.sqrt(
+                        weight / max_edge
+                    ),
+                    color="rgba(100,110,130,0.28)",
+                ),
+                hoverinfo="text",
+                text=[
+                    f"{desc}<br>{weight}篇",
+                    f"{desc}<br>{weight}篇",
+                ],
+                showlegend=False,
+            )
+        )
+
+    max_node = max(
+        list(source_counts.values)
+        + list(mech_counts.values)
+        + list(outcome_counts.values)
+        + [1]
+    )
+
+    def add_nodes(
+        names,
+        counts,
+        prefix,
+        color,
+        layer_name,
+    ):
+        xs = []
+        ys = []
+        zs = []
+        texts = []
+        hover = []
+        sizes = []
+
+        for name in names:
+            x, y, z = positions[
+                prefix + "|" + name
+            ]
+            count = int(counts[name])
+
+            xs.append(x)
+            ys.append(y)
+            zs.append(z)
+            texts.append(name)
+            hover.append(
+                f"<b>{name}</b><br>"
+                f"层级：{layer_name}<br>"
+                f"关联文献：{count}篇"
+            )
+            sizes.append(
+                8
+                + 25
+                * np.sqrt(
+                    count / max_node
+                )
+            )
+
+        fig.add_trace(
+            go.Scatter3d(
+                x=xs,
+                y=ys,
+                z=zs,
+                mode="markers+text",
+                text=texts,
+                textposition="top center",
+                hovertext=hover,
+                hoverinfo="text",
+                marker=dict(
+                    size=sizes,
+                    color=color,
+                    opacity=0.92,
+                    line=dict(
+                        color="white",
+                        width=0.7,
+                    ),
+                ),
+                name=layer_name,
+            )
+        )
+
+    # 中心节点
+    fig.add_trace(
+        go.Scatter3d(
+            x=[0],
+            y=[0],
+            z=[0],
+            mode="markers+text",
+            text=["KDP/DKDP"],
+            textposition="top center",
+            hovertext=[
+                "<b>KDP/DKDP开裂与缺陷研究</b><br>知识图谱中心"
+            ],
+            hoverinfo="text",
+            marker=dict(
+                size=34,
+                color="#F4A261",
+                line=dict(
+                    color="white",
+                    width=1.2,
+                ),
+            ),
+            name="研究中心",
+        )
+    )
+
+    add_nodes(
+        source_nodes,
+        source_counts,
+        "S",
+        "#E76F51",
+        "缺陷/应力来源",
+    )
+
+    add_nodes(
+        mech_nodes,
+        mech_counts,
+        "M",
+        "#457B9D",
+        "局部机制",
+    )
+
+    add_nodes(
+        outcome_nodes,
+        outcome_counts,
+        "O",
+        "#2A9D8F",
+        "宏观后果",
+    )
+
+    fig.update_layout(
+        height=760,
+        margin=dict(
+            l=0,
+            r=0,
+            t=20,
+            b=0,
+        ),
+        legend=dict(
+            orientation="h",
+            y=1.02,
+            x=0.02,
+        ),
+        scene=dict(
+            xaxis=dict(
+                visible=False
+            ),
+            yaxis=dict(
+                visible=False
+            ),
+            zaxis=dict(
+                visible=False
+            ),
+            aspectmode="cube",
+            bgcolor="rgba(0,0,0,0)",
+            camera=dict(
+                eye=dict(
+                    x=1.55,
+                    y=1.55,
+                    z=1.25,
+                )
+            ),
+        ),
+    )
+
+    return fig
 
 
 if page == "🏠 科研驾驶舱":
@@ -277,63 +778,397 @@ elif page == "📚 文献中心":
 
 elif page == "🗺️ 知识图谱":
 
-    st.title("🗺️ 知识图谱与分类")
+    @st.fragment
+    def render_knowledge_graph():
 
-    scope = st.radio(
-        "范围",
-        ["相关池", "S+A", "全库"],
-        horizontal=True,
-    )
-
-    if scope == "全库":
-        work = df
-    elif scope == "相关池":
-        work = df[
-            df["V5相关池"] == "KDP/DKDP相关池"
-        ]
-    else:
-        work = df[
-            df["V5推荐等级"].isin(
-                ["S 核心 50", "A 重点 150"]
-            )
-        ]
-
-    chain = (
-        work.groupby(
-            ["缺陷/应力来源", "作用机制", "宏观结果"]
+        st.title("🗺️ KDP/DKDP开裂与缺陷知识图谱")
+        st.caption(
+            "聚焦“缺陷/应力来源 → 局部机制 → 宏观后果”，"
+            "默认隐藏未明确分类，避免被大量基础物性文献淹没。"
         )
-        .size()
-        .reset_index(name="文献数")
-    )
 
-    st.plotly_chart(
-        px.sunburst(
-            chain,
-            path=[
-                "缺陷/应力来源",
-                "作用机制",
-                "宏观结果",
+        c1, c2, c3 = st.columns(
+            [1.1, 1.2, 1.4]
+        )
+
+        scope = c1.radio(
+            "范围",
+            [
+                "相关池",
+                "S+A",
+                "全库",
             ],
-            values="文献数",
-        ),
-        use_container_width=True,
-    )
+            horizontal=False,
+        )
 
-    raw = (
-        work["详细二级分类"]
-        .replace("", "未命中")
-        .value_counts()
-        .head(40)
-        .rename_axis("原始详细分类")
-        .reset_index(name="文献数")
-    )
+        hide_uncertain = c2.checkbox(
+            "隐藏未明确分类",
+            value=True,
+            help=(
+                "隐藏“基础物性/其他、机制未明确、结果未明确”等"
+                "低信息量节点，使图谱集中到开裂与缺陷主线。"
+            ),
+        )
 
-    st.dataframe(
-        raw,
-        use_container_width=True,
-        hide_index=True,
-    )
+        core_raw_only = c3.checkbox(
+            "分类统计仅看开裂/缺陷核心",
+            value=True,
+            help=(
+                "下方详细分类统计只保留缺陷、生长、加工、应力、"
+                "开裂、激光损伤、理论计算等与你当前研究直接相关的分类。"
+            ),
+        )
 
+        if scope == "全库":
+            work = df.copy()
+
+        elif scope == "相关池":
+            work = df[
+                df["V5相关池"]
+                == "KDP/DKDP相关池"
+            ].copy()
+
+        else:
+            work = df[
+                df["V5推荐等级"].isin(
+                    [
+                        "S 核心 50",
+                        "A 重点 150",
+                    ]
+                )
+            ].copy()
+
+        original_n = len(work)
+
+        if hide_uncertain:
+            work = work[
+                ~work["缺陷/应力来源"].isin(
+                    KG_UNCERTAIN
+                )
+                & ~work["作用机制"].isin(
+                    KG_UNCERTAIN
+                )
+                & ~work["宏观结果"].isin(
+                    KG_UNCERTAIN
+                )
+            ].copy()
+
+        chain = (
+            work.groupby(
+                [
+                    "缺陷/应力来源",
+                    "作用机制",
+                    "宏观结果",
+                ],
+                as_index=False,
+            )
+            .size()
+            .rename(
+                columns={
+                    "size": "文献数"
+                }
+            )
+        )
+
+        if chain.empty:
+            st.warning(
+                "当前筛选条件下没有可用于构建知识图谱的关系。"
+            )
+            return
+
+        active_docs = int(
+            chain["文献数"].sum()
+        )
+
+        source_n = int(
+            chain["缺陷/应力来源"]
+            .nunique()
+        )
+        mech_n = int(
+            chain["作用机制"]
+            .nunique()
+        )
+        outcome_n = int(
+            chain["宏观结果"]
+            .nunique()
+        )
+
+        metrics = st.columns(5)
+
+        metrics[0].metric(
+            "当前文献范围",
+            f"{original_n:,}",
+        )
+        metrics[1].metric(
+            "有效关系文献",
+            f"{active_docs:,}",
+        )
+        metrics[2].metric(
+            "缺陷/应力来源",
+            source_n,
+        )
+        metrics[3].metric(
+            "局部机制",
+            mech_n,
+        )
+        metrics[4].metric(
+            "宏观后果",
+            outcome_n,
+        )
+
+        st.info(
+            "现在主图不再把“基础物性/其他 → 机制未明确 → 结果未明确”"
+            "当成核心知识链；需要时可取消“隐藏未明确分类”查看完整情况。"
+        )
+
+        tab1, tab2, tab3 = st.tabs(
+            [
+                "🔗 研究主线",
+                "🌐 3D球状关系图",
+                "📊 分类与关系统计",
+            ]
+        )
+
+        with tab1:
+
+            st.subheader(
+                "缺陷/应力来源 → 局部机制 → 宏观后果"
+            )
+
+            st.plotly_chart(
+                _kg_make_sankey(
+                    chain
+                ),
+                use_container_width=True,
+                config={
+                    "displaylogo": False,
+                },
+            )
+
+            st.markdown(
+                "#### 最强研究链路"
+            )
+
+            top_chain = (
+                chain.sort_values(
+                    "文献数",
+                    ascending=False,
+                )
+                .head(20)
+                .copy()
+            )
+
+            top_chain["占有效关系比例"] = (
+                top_chain["文献数"]
+                / max(
+                    active_docs,
+                    1,
+                )
+                * 100
+            ).round(1).astype(str) + "%"
+
+            st.dataframe(
+                top_chain[
+                    [
+                        "缺陷/应力来源",
+                        "作用机制",
+                        "宏观结果",
+                        "文献数",
+                        "占有效关系比例",
+                    ]
+                ],
+                use_container_width=True,
+                hide_index=True,
+                height=430,
+            )
+
+        with tab2:
+
+            st.subheader(
+                "立体3D球状关系图"
+            )
+
+            st.caption(
+                "中心是KDP/DKDP开裂与缺陷研究；"
+                "第一层球壳=缺陷/应力来源，"
+                "第二层=局部机制，第三层=宏观后果。"
+                "节点越大表示关联文献越多；连线越粗表示关系越强。"
+                "可用鼠标拖动旋转、滚轮缩放。"
+            )
+
+            max_rel = min(
+                60,
+                max(
+                    12,
+                    len(chain),
+                ),
+            )
+
+            default_rel = min(
+                36,
+                max_rel,
+            )
+
+            relation_limit = st.slider(
+                "3D图显示的最强关系数",
+                min_value=min(
+                    10,
+                    max_rel,
+                ),
+                max_value=max_rel,
+                value=default_rel,
+                step=1,
+                help=(
+                    "关系太多会显得拥挤；一般20–40条最适合观察。"
+                ),
+            )
+
+            st.plotly_chart(
+                _kg_make_3d_ball(
+                    chain,
+                    max_relations=relation_limit,
+                ),
+                use_container_width=True,
+                config={
+                    "displaylogo": False,
+                    "scrollZoom": True,
+                },
+            )
+
+            st.markdown(
+                """
+**怎么看这张3D图：**
+- 离中心最近：缺陷和应力“从哪里来”；
+- 中间球壳：这些来源通过什么局部机制起作用；
+- 最外球壳：最终表现为开裂、激光损伤、吸收/散射等什么后果；
+- 粗连线：当前文献库中证据较多的研究路径；
+- 小节点/细连线：可能是研究较少、值得进一步核查的方向。
+"""
+            )
+
+        with tab3:
+
+            left, right = st.columns(
+                [1.15, 1]
+            )
+
+            with left:
+
+                st.subheader(
+                    "核心详细分类分布"
+                )
+
+                raw = (
+                    work["详细二级分类"]
+                    .fillna("")
+                    .replace(
+                        "",
+                        "未命中详细分类",
+                    )
+                )
+
+                raw_counts = (
+                    raw.value_counts()
+                    .rename_axis(
+                        "原始详细分类"
+                    )
+                    .reset_index(
+                        name="文献数"
+                    )
+                )
+
+                if core_raw_only:
+
+                    pattern = "|".join(
+                        re.escape(k)
+                        for k in KG_CORE_RAW_KEYWORDS
+                    )
+
+                    core_mask = (
+                        raw_counts[
+                            "原始详细分类"
+                        ]
+                        .str.contains(
+                            pattern,
+                            case=False,
+                            regex=True,
+                        )
+                    )
+
+                    raw_counts = (
+                        raw_counts[
+                            core_mask
+                        ]
+                        .copy()
+                    )
+
+                raw_counts = (
+                    raw_counts
+                    .head(35)
+                )
+
+                if not raw_counts.empty:
+
+                    st.plotly_chart(
+                        px.bar(
+                            raw_counts.sort_values(
+                                "文献数"
+                            ),
+                            x="文献数",
+                            y="原始详细分类",
+                            orientation="h",
+                            title="详细分类文献量",
+                        ),
+                        use_container_width=True,
+                    )
+
+                else:
+                    st.info(
+                        "当前条件下没有命中的核心详细分类。"
+                    )
+
+            with right:
+
+                st.subheader(
+                    "关系强度排名"
+                )
+
+                relation_table = (
+                    chain.assign(
+                        研究链路=(
+                            chain[
+                                "缺陷/应力来源"
+                            ]
+                            + " → "
+                            + chain[
+                                "作用机制"
+                            ]
+                            + " → "
+                            + chain[
+                                "宏观结果"
+                            ]
+                        )
+                    )
+                    .sort_values(
+                        "文献数",
+                        ascending=False,
+                    )
+                    .head(30)
+                )
+
+                st.dataframe(
+                    relation_table[
+                        [
+                            "研究链路",
+                            "文献数",
+                        ]
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                    height=620,
+                )
+
+    render_knowledge_graph()
 
 elif page == "🧭 专题调研":
 
