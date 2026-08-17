@@ -707,7 +707,7 @@ def direction_review_page():
 
     valid = stats[stats["总文献"] > 0].copy()
     if len(valid):
-        active = valid.sort_values(["近五年占比", "近5年"], ascending=False).iloc[0]
+        active = valid.sort_values(["近5年占比", "近5年"], ascending=False).iloc[0]
         evidence = valid.sort_values(["总文献", "S/A"], ascending=False).iloc[0]
         core = valid.assign(
             _core_density=valid["S/A"] / valid["总文献"].replace(0, np.nan) * 100
@@ -724,7 +724,7 @@ def direction_review_page():
                 {
                     "kicker": "RECENT MOMENTUM",
                     "title": active["专题"],
-                    "note": f"近五年占比 {active['近五年占比']:.1f}% · {int(active['近5年'])} 篇",
+                    "note": f"近五年占比 {active['近5年占比']:.1f}% · {int(active['近5年'])} 篇",
                     "accent": COLORS["cyan"],
                 },
                 {

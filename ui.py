@@ -1460,6 +1460,44 @@ div[data-testid="stDataFrame"] {{
     .kdp-hero::after {{ display:none !important; }}
 }}
 
+
+/* ===== screenshot acceptance fixes ===== */
+section[data-testid="stSidebar"] .kdp-brand .kdp-brand-title {{
+    color: #FFFFFF !important;
+}}
+section[data-testid="stSidebar"] .kdp-brand .kdp-brand-sub {{
+    color: rgba(247,251,255,.82) !important;
+}}
+section[data-testid="stSidebar"] .kdp-brand .kdp-brand-mark {{
+    color: #FFFFFF !important;
+}}
+section[data-testid="stSidebar"] .kdp-brand::after {{
+    color: rgba(255,255,255,.52) !important;
+}}
+
+.stButton > button[kind="primary"],
+.stButton > button[kind="primary"] *,
+.stButton > button[kind="primary"] p,
+.stButton > button[kind="primary"] span {{
+    color: #FFFFFF !important;
+}}
+
+div[data-baseweb="textarea"] textarea,
+div[data-baseweb="input"] input {{
+    color: #243B55 !important;
+    font-weight: 500 !important;
+}}
+
+/* 小屏和笔记本上也保证 Hero 不显得过大 */
+@media (max-width: 1280px) {{
+    .kdp-hero-title {{
+        font-size: 28px !important;
+    }}
+    .kdp-hero {{
+        min-height: 108px !important;
+    }}
+}}
+
 </style>
 """,
         unsafe_allow_html=True,

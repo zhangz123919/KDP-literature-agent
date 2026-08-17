@@ -324,12 +324,11 @@ def _top_chain(chain: pd.DataFrame, top_n: int) -> pd.DataFrame:
 
 def _relationship_matrix(chain: pd.DataFrame, top_n=28):
     """
-    双矩阵研究路径图：
+    双路径关系矩阵：
     左：缺陷/应力来源 × 局部机制
     右：局部机制 × 宏观后果
 
-    相比桑基图，它不会因为粗线交叉导致信息糊成一片，
-    还能直接看出“哪一对关系”证据最强。
+    使用浅色“论文图版”风格，和全站国科蓝主题一致。
     """
     chain = _top_chain(chain, top_n)
 
@@ -395,29 +394,37 @@ def _relationship_matrix(chain: pd.DataFrame, top_n=28):
     fig = make_subplots(
         rows=1,
         cols=2,
-        horizontal_spacing=.13,
+        horizontal_spacing=.17,
         subplot_titles=(
-            "缺陷 / 应力来源  ×  局部机制",
-            "局部机制  ×  宏观后果",
+            "缺陷 / 应力来源  →  局部机制",
+            "局部机制  →  宏观后果",
         ),
     )
 
+    # 浅色科研蓝：零值近纸白，证据越强越接近国科蓝/青蓝。
     colorscale = [
-        [0.00, "#0E1728"],
-        [0.14, "#17233B"],
-        [0.35, "#314269"],
-        [0.62, "#5D63C8"],
-        [0.82, "#4A8FC1"],
-        [1.00, "#20B6B0"],
+        [0.00, "#F5F7F8"],
+        [0.08, "#EDF2F6"],
+        [0.28, "#D5E3F0"],
+        [0.52, "#A7C4DE"],
+        [0.74, "#5F92C2"],
+        [0.90, "#2E6CA8"],
+        [1.00, "#168B94"],
     ]
+
+    common = dict(
+        colorscale=colorscale,
+        zmin=0,
+        hoverongaps=False,
+        xgap=5,
+        ygap=5,
+    )
 
     fig.add_trace(
         go.Heatmap(
             z=sm_pivot.values,
             x=sm_pivot.columns,
             y=sm_pivot.index,
-            colorscale=colorscale,
-            zmin=0,
             showscale=False,
             text=np.where(
                 sm_pivot.values > 0,
@@ -425,15 +432,14 @@ def _relationship_matrix(chain: pd.DataFrame, top_n=28):
                 "",
             ),
             texttemplate="%{text}",
-            textfont=dict(size=12, color="#F2F6FB"),
+            textfont=dict(size=12, color="#17324E"),
             hovertemplate=(
                 "<b>%{y}</b><br>"
                 "→ %{x}<br>"
-                "证据文献 %{z:.0f} 篇"
+                "关联文献 %{z:.0f} 篇"
                 "<extra></extra>"
             ),
-            xgap=4,
-            ygap=4,
+            **common,
         ),
         row=1,
         col=1,
@@ -444,18 +450,17 @@ def _relationship_matrix(chain: pd.DataFrame, top_n=28):
             z=mo_pivot.values,
             x=mo_pivot.columns,
             y=mo_pivot.index,
-            colorscale=colorscale,
-            zmin=0,
             showscale=True,
             colorbar=dict(
                 title=dict(
                     text="文献数",
-                    font=dict(color="#AFC0D5"),
+                    font=dict(color="#52677F", size=11),
                 ),
-                thickness=10,
-                len=.70,
-                x=1.02,
-                tickfont=dict(color="#AFC0D5"),
+                thickness=9,
+                len=.68,
+                x=1.025,
+                outlinewidth=0,
+                tickfont=dict(color="#607287", size=10),
             ),
             text=np.where(
                 mo_pivot.values > 0,
@@ -463,52 +468,56 @@ def _relationship_matrix(chain: pd.DataFrame, top_n=28):
                 "",
             ),
             texttemplate="%{text}",
-            textfont=dict(size=12, color="#F2F6FB"),
+            textfont=dict(size=12, color="#17324E"),
             hovertemplate=(
                 "<b>%{y}</b><br>"
                 "→ %{x}<br>"
-                "证据文献 %{z:.0f} 篇"
+                "关联文献 %{z:.0f} 篇"
                 "<extra></extra>"
             ),
-            xgap=4,
-            ygap=4,
+            **common,
         ),
         row=1,
         col=2,
     )
 
     fig.update_layout(
-        paper_bgcolor="#0B1220",
-        plot_bgcolor="#0B1220",
-        height=610,
-        margin=dict(l=30, r=90, t=80, b=30),
+        paper_bgcolor="rgba(255,255,252,0)",
+        plot_bgcolor="rgba(255,255,252,0)",
+        height=590,
+        # 左侧增加空间，避免“本征点缺陷”等标签被裁掉。
+        margin=dict(l=118, r=82, t=78, b=38),
         font=dict(
             family='Inter, "Microsoft YaHei", Arial',
-            color="#DCE7F4",
+            color="#314B67",
             size=12,
         ),
     )
 
     fig.update_annotations(
         font=dict(
-            color="#EEF4FA",
-            size=15,
+            color="#17324E",
+            size=14,
+            family='Inter, "Microsoft YaHei", Arial',
         )
     )
 
     fig.update_xaxes(
         side="top",
-        tickangle=-22,
-        tickfont=dict(color="#B7C5D7", size=11),
+        tickangle=-20,
+        tickfont=dict(color="#52677F", size=10.5),
         showgrid=False,
         zeroline=False,
+        ticks="",
     )
 
     fig.update_yaxes(
-        tickfont=dict(color="#B7C5D7", size=11),
+        tickfont=dict(color="#52677F", size=10.5),
         showgrid=False,
         zeroline=False,
+        ticks="",
         autorange="reversed",
+        automargin=True,
     )
 
     return fig
@@ -1206,9 +1215,9 @@ def gaps():
 def ai_agent():
     df = _df()
     page_header(
-        "AI 科研智能体",
-        "默认融合本地文献库、最新外部资料与专业推理；全过程显示检索与生成状态，并保留证据来源。",
-        "AI RESEARCH COPILOT",
+        "科研问答与证据分析",
+        "融合本地文献库、外部补充资料与领域分析；全过程保留检索状态、证据编号与来源。",
+        "RESEARCH EVIDENCE DESK",
     )
 
     with st.container(border=True):
@@ -1292,8 +1301,8 @@ def ai_agent():
     render_deepseek_usage()
     st.download_button(
         "导出回答 Word",
-        docx_bytes("科研智能体回答", answer, sources),
-        "科研智能体回答.docx",
+        docx_bytes("科研问答与证据分析", answer, sources),
+        "科研问答与证据分析.docx",
     )
 
 
