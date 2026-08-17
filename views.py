@@ -1467,34 +1467,83 @@ def _dense_evidence_globe(
     )
     max_w = max(float(c["文献数"].max()), 1.0)
 
-    def structural_edge_trace(df_edge, a_col, b_col, a_prefix, b_prefix, color):
-        xs, ys, zs = [], [], []
+    def add_structural_edges(
+        df_edge,
+        a_col,
+        b_col,
+        a_prefix,
+        b_prefix,
+        base_rgb,
+        relation_name,
+    ):
+        """Aggregated structural relations with evidence-scaled line strength."""
+        if df_edge.empty:
+            return
+
+        max_count = max(float(df_edge["文献数"].max()), 1.0)
+        buckets = {
+            "weak": {"x": [], "y": [], "z": [], "width": 1.3, "alpha": .18},
+            "mid": {"x": [], "y": [], "z": [], "width": 2.7, "alpha": .42},
+            "strong": {"x": [], "y": [], "z": [], "width": 4.8, "alpha": .78},
+        }
+        hx, hy, hz, htext = [], [], [], []
+
         for _, r in df_edge.iterrows():
-            a = structural_pos[a_prefix + "|" + str(r[a_col])]
-            b = structural_pos[b_prefix + "|" + str(r[b_col])]
+            a_name = str(r[a_col])
+            b_name = str(r[b_col])
+            a = structural_pos[a_prefix + "|" + a_name]
+            b = structural_pos[b_prefix + "|" + b_name]
+            n_ev = int(r["文献数"])
+            ratio = n_ev / max_count
+            bucket = "strong" if ratio >= .55 else "mid" if ratio >= .25 else "weak"
             pts = _curve_points(a, b, lift=.32, inward=.58, n=22)
-            xs.extend(pts[:, 0].tolist() + [None])
-            ys.extend(pts[:, 1].tolist() + [None])
-            zs.extend(pts[:, 2].tolist() + [None])
-        return go.Scatter3d(
-            x=xs, y=ys, z=zs,
-            mode="lines",
-            line=dict(color=color, width=2.7),
-            hoverinfo="skip",
-            showlegend=False,
+            buckets[bucket]["x"].extend(pts[:, 0].tolist() + [None])
+            buckets[bucket]["y"].extend(pts[:, 1].tolist() + [None])
+            buckets[bucket]["z"].extend(pts[:, 2].tolist() + [None])
+
+            mid = pts[len(pts)//2]
+            hx.append(float(mid[0])); hy.append(float(mid[1])); hz.append(float(mid[2]))
+            htext.append(
+                f"<b>{relation_name}</b>"
+                f"<br>{a_name} → {b_name}"
+                f"<br>当前数据库关联文献：<b>{n_ev}</b> 篇"
+                f"<br><span style='color:#9EB2C5'>聚合文献关系，不自动等同于因果关系。</span>"
+            )
+
+        for key in ["weak", "mid", "strong"]:
+            d = buckets[key]
+            if not d["x"]:
+                continue
+            fig.add_trace(
+                go.Scatter3d(
+                    x=d["x"], y=d["y"], z=d["z"], mode="lines",
+                    line=dict(
+                        color=f"rgba({base_rgb[0]},{base_rgb[1]},{base_rgb[2]},{d['alpha']})",
+                        width=d["width"],
+                    ),
+                    hoverinfo="skip", showlegend=False,
+                )
+            )
+
+        fig.add_trace(
+            go.Scatter3d(
+                x=hx, y=hy, z=hz, mode="markers",
+                marker=dict(
+                    size=8,
+                    color=f"rgba({base_rgb[0]},{base_rgb[1]},{base_rgb[2]},0.025)",
+                    line=dict(width=0),
+                ),
+                hovertext=htext, hoverinfo="text", showlegend=False,
+            )
         )
 
-    fig.add_trace(
-        structural_edge_trace(
-            sm, "缺陷/应力来源", "作用机制", "S", "M",
-            "rgba(113,126,229,.48)"
-        )
+    add_structural_edges(
+        sm, "缺陷/应力来源", "作用机制", "S", "M", (119,115,216),
+        "聚合关系｜缺陷/应力来源 → 局部机制",
     )
-    fig.add_trace(
-        structural_edge_trace(
-            mo, "作用机制", "宏观结果", "M", "O",
-            "rgba(36,183,185,.50)"
-        )
+    add_structural_edges(
+        mo, "作用机制", "宏观结果", "M", "O", (33,173,177),
+        "聚合关系｜局部机制 → 宏观结果",
     )
 
     # KDP core.
@@ -1608,9 +1657,9 @@ def _dense_evidence_globe(
 
         # One merged edge trace per classification family.
         edge_xyz = {
-            "S": {"x": [], "y": [], "z": []},
-            "M": {"x": [], "y": [], "z": []},
-            "O": {"x": [], "y": [], "z": []},
+            "S": {"x": [], "y": [], "z": [], "hx": [], "hy": [], "hz": [], "hover": []},
+            "M": {"x": [], "y": [], "z": [], "hx": [], "hy": [], "hz": [], "hover": []},
+            "O": {"x": [], "y": [], "z": [], "hx": [], "hy": [], "hz": [], "hover": []},
         }
 
         tier_color = {
@@ -1682,42 +1731,55 @@ def _dense_evidence_globe(
                 f"P{j+1}" if j < 8 else ""
             )
 
-            for key, target in [
-                ("S", ps),
-                ("M", pm),
-                ("O", po),
-            ]:
+            edge_specs = [
+                ("S", ps, "文献 → 缺陷/应力来源", s),
+                ("M", pm, "文献 → 局部作用机制", m),
+                ("O", po, "文献 → 宏观结果", o),
+            ]
+            for key, target, relation_label, target_name in edge_specs:
                 pts = _curve_points(pp, target, lift=.18, inward=.72, n=12)
                 edge_xyz[key]["x"].extend(pts[:, 0].tolist() + [None])
                 edge_xyz[key]["y"].extend(pts[:, 1].tolist() + [None])
                 edge_xyz[key]["z"].extend(pts[:, 2].tolist() + [None])
+                mid = pts[len(pts)//2]
+                edge_xyz[key]["hx"].append(float(mid[0]))
+                edge_xyz[key]["hy"].append(float(mid[1]))
+                edge_xyz[key]["hz"].append(float(mid[2]))
+                edge_xyz[key]["hover"].append(
+                    f"<b>{relation_label}</b>"
+                    f"<br>{title[:105]}"
+                    f"<br>连接到：<b>{target_name}</b>"
+                    f"<br>DOI：{doi or '无'}"
+                    f"<br><span style='color:#9EB2C5'>该细线表示论文的分类/证据归属，不表示论文证明了因果关系。</span>"
+                )
                 paper_edge_count += 1
 
-        # hundreds of literature lines, but only 3 Plotly traces
-        fig.add_trace(
-            go.Scatter3d(
-                x=edge_xyz["S"]["x"], y=edge_xyz["S"]["y"], z=edge_xyz["S"]["z"],
-                mode="lines",
-                line=dict(color="rgba(226,138,53,.14)", width=1.0),
-                hoverinfo="skip", showlegend=False,
+        # Hundreds of literature edges are merged into 3 line traces for performance.
+        line_specs = [
+            ("S", "rgba(226,138,53,.17)", "论文 → 缺陷/应力来源", (226,138,53)),
+            ("M", "rgba(119,115,216,.17)", "论文 → 局部作用机制", (119,115,216)),
+            ("O", "rgba(33,173,177,.17)", "论文 → 宏观结果", (33,173,177)),
+        ]
+        for key, color, legend_name, rgb in line_specs:
+            fig.add_trace(
+                go.Scatter3d(
+                    x=edge_xyz[key]["x"], y=edge_xyz[key]["y"], z=edge_xyz[key]["z"],
+                    mode="lines", line=dict(color=color, width=1.0),
+                    hoverinfo="skip", showlegend=True, name=legend_name,
+                )
             )
-        )
-        fig.add_trace(
-            go.Scatter3d(
-                x=edge_xyz["M"]["x"], y=edge_xyz["M"]["y"], z=edge_xyz["M"]["z"],
-                mode="lines",
-                line=dict(color="rgba(119,115,216,.14)", width=1.0),
-                hoverinfo="skip", showlegend=False,
+            fig.add_trace(
+                go.Scatter3d(
+                    x=edge_xyz[key]["hx"], y=edge_xyz[key]["hy"], z=edge_xyz[key]["hz"],
+                    mode="markers",
+                    marker=dict(
+                        size=5.5,
+                        color=f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.02)",
+                        line=dict(width=0),
+                    ),
+                    hovertext=edge_xyz[key]["hover"], hoverinfo="text", showlegend=False,
+                )
             )
-        )
-        fig.add_trace(
-            go.Scatter3d(
-                x=edge_xyz["O"]["x"], y=edge_xyz["O"]["y"], z=edge_xyz["O"]["z"],
-                mode="lines",
-                line=dict(color="rgba(33,173,177,.14)", width=1.0),
-                hoverinfo="skip", showlegend=False,
-            )
-        )
 
         if paper_coords:
             arr = np.vstack(paper_coords)
@@ -1986,16 +2048,33 @@ def knowledge_graph():
                 key="kg_dense_focus_node",
             )
 
-        with st.expander("图谱读法与性能说明", expanded=False):
+        st.markdown("#### 线条与节点到底代表什么？")
+        semantics = pd.DataFrame(
+            [
+                ["橙色大节点", "缺陷 / 应力来源", "例如杂质、加工缺陷、生长缺陷等"],
+                ["紫色大节点", "局部作用机制", "例如电子结构/缺陷态、局域应力、氢键结构等"],
+                ["青绿色大节点", "宏观结果", "例如开裂、吸收、LIDT、散射等"],
+                ["粉色/淡色小节点", "具体论文", "悬停显示题名、期刊、年份、DOI和研究路径"],
+                ["紫色较粗曲线", "缺陷/应力来源 → 局部机制", "聚合关系；越粗/越亮表示当前数据库关联文献越多"],
+                ["青绿色较粗曲线", "局部机制 → 宏观结果", "聚合关系；越粗/越亮表示当前数据库关联文献越多"],
+                ["橙色细线", "论文 → 缺陷/应力来源", "表示这篇论文被归入该来源类别"],
+                ["紫色细线", "论文 → 局部作用机制", "表示这篇论文涉及/支持该机制分类"],
+                ["青绿色细线", "论文 → 宏观结果", "表示这篇论文涉及该宏观结果分类"],
+            ],
+            columns=["图形编码", "关系含义", "解释"],
+        )
+        st.dataframe(semantics, width="stretch", hide_index=True, height=360)
+        st.warning(
+            "科学边界：图中的连接首先表示‘文献分类、共现或证据归属’，不自动等同于因果关系。"
+            "若要把某条路径写成确定机理或因果链，仍需回查代表论文原文及实验/计算证据。"
+        )
+
+        with st.expander("性能说明", expanded=False):
             st.markdown(
                 """
-- **橙色节点**：缺陷 / 应力来源  
-- **紫色节点**：局部作用机制  
-- **青绿色节点**：宏观结果  
-- **粉色 / 淡色小节点**：真实文献  
-- **文献节点悬停**：显示题名、期刊、年份、DOI和所属研究路径  
-- **文献到三类结构节点的细线**：表示该论文被归入该“来源—机制—结果”路径  
-- **全景证据云**：可显示数百篇论文，产生数百至上千条文献关系线；为了保证浏览器可用，所有文献连线被合并为少量WebGL trace
+高密度模式可绘制数百篇论文和数百至上千条关系线。为了避免浏览器卡死，
+同一类型的细线会合并为少量 WebGL trace；每条细线在中点设置隐藏 hover 锚点，
+鼠标靠近该线中段时可查看“哪篇论文连接到哪个分类节点”。
 """
             )
 
@@ -2059,7 +2138,7 @@ def knowledge_graph():
 
         section_title(
             "当前图谱中的文献证据",
-            "3D图不再只展示抽象类别；这里列出当前被绘制为文献节点的真实论文。",
+            "这里列出当前被绘制为文献节点的真实论文，并给出每篇论文对应的‘来源 → 机制 → 结果’分类路径。",
         )
 
         if len(shown_papers):
