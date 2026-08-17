@@ -6,7 +6,7 @@ import html
 import streamlit as st
 
 from research_memory import get_active_project, list_items
-from ui import COLORS, section_title
+from ui import section_title
 
 
 def _count(kind: str) -> int:
@@ -24,7 +24,12 @@ def _page(key: str):
     return (st.session_state.get("_kdp_nav_pages") or {}).get(key)
 
 
-def _page_link(key: str, label: str, icon: str | None = None, help_text: str | None = None):
+def _page_link(
+    key: str,
+    label: str,
+    icon: str | None = None,
+    help_text: str | None = None,
+):
     page = _page(key)
     if page is None:
         st.button(label, disabled=True, width="stretch")
@@ -36,6 +41,20 @@ def _page_link(key: str, label: str, icon: str | None = None, help_text: str | N
         help=help_text,
         width="stretch",
     )
+
+
+def _group(title: str, kicker: str, items):
+    st.markdown(
+        f"""
+<div class="research-entry-head">
+  <div class="research-entry-kicker">{kicker}</div>
+  <div class="research-entry-title">{title}</div>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
+    for key, label, icon, help_text in items:
+        _page_link(key, label, icon, help_text)
 
 
 def home_page():
@@ -53,113 +72,213 @@ def home_page():
     st.markdown(
         """
 <style>
-.kdp-home-hero{
-    position:relative;overflow:hidden;min-height:455px;
-    border:1px solid rgba(19,89,166,.16);border-radius:28px;
-    padding:56px 62px 46px;
+/* ============================================================
+   HOME — scientific dossier / instrument editorial style
+   ============================================================ */
+.kdp-cover{
+    position:relative;
+    min-height:520px;
+    overflow:hidden;
+    border-radius:24px;
+    border:1px solid rgba(22,70,112,.14);
     background:
-        radial-gradient(circle at 84% 27%,rgba(14,154,167,.13),transparent 28%),
-        radial-gradient(circle at 70% 76%,rgba(47,115,201,.10),transparent 31%),
-        linear-gradient(135deg,rgba(255,255,252,.99),rgba(242,247,251,.98));
-    box-shadow:0 18px 50px rgba(32,67,103,.08);
+      linear-gradient(90deg, rgba(248,248,244,.99) 0%, rgba(248,248,244,.98) 47%, rgba(236,244,247,.96) 100%);
+    box-shadow:0 22px 55px rgba(26,57,88,.075);
 }
-.kdp-home-hero:before{
+.kdp-cover:before{
     content:"";position:absolute;inset:0;
     background-image:
-      linear-gradient(rgba(19,89,166,.03) 1px,transparent 1px),
-      linear-gradient(90deg,rgba(19,89,166,.03) 1px,transparent 1px);
-    background-size:38px 38px;
-    mask-image:linear-gradient(to right,rgba(0,0,0,.45),rgba(0,0,0,.08));
-    pointer-events:none
+      linear-gradient(rgba(26,72,111,.032) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(26,72,111,.032) 1px,transparent 1px);
+    background-size:32px 32px;
+    pointer-events:none;
 }
-.home-kicker{
-    position:relative;z-index:2;display:inline-flex;padding:7px 12px;border-radius:999px;
-    border:1px solid rgba(19,89,166,.18);background:rgba(255,255,255,.72);
-    font-size:11px;font-weight:850;letter-spacing:.14em;color:#1359A6
+.cover-left{
+    position:relative;z-index:3;
+    width:58%;padding:54px 58px 44px 62px;
 }
-.home-title{
-    position:relative;z-index:2;margin:24px 0 12px;max-width:820px;
-    font-size:55px;line-height:1.08;font-weight:860;letter-spacing:-.035em;color:#102D49
+.cover-meta{
+    display:flex;align-items:center;gap:13px;
+    font-size:10px;letter-spacing:.16em;font-weight:900;color:#55718A;
 }
-.home-sub{
-    position:relative;z-index:2;max-width:835px;color:#5A7088;font-size:18px;line-height:1.8
+.cover-meta:before{
+    content:"";width:31px;height:2px;background:#1359A6;display:inline-block
 }
-.home-tags{position:relative;z-index:2;margin-top:27px;display:flex;flex-wrap:wrap;gap:9px}
-.home-tag{
-    padding:8px 12px;border-radius:10px;background:rgba(255,255,255,.78);
-    border:1px solid rgba(19,89,166,.12);color:#36526E;font-size:12px;font-weight:720
+.cover-title{
+    margin:25px 0 16px;
+    max-width:760px;
+    color:#102F4C;
+    font-size:55px;line-height:1.07;
+    font-weight:880;letter-spacing:-.035em
 }
-.home-orbit{position:absolute;right:38px;top:32px;width:410px;height:410px;pointer-events:none}
-.home-orbit .ring{
-    position:absolute;left:50%;top:50%;border:1px solid rgba(19,89,166,.16);
-    border-radius:50%;transform:translate(-50%,-50%) rotateX(68deg)
+.cover-deck{
+    max-width:770px;color:#546E85;font-size:17px;line-height:1.86
 }
-.home-orbit .r1{width:170px;height:170px}
-.home-orbit .r2{width:260px;height:260px;transform:translate(-50%,-50%) rotateX(66deg) rotateZ(32deg)}
-.home-orbit .r3{width:350px;height:350px;transform:translate(-50%,-50%) rotateX(70deg) rotateZ(-27deg)}
-.home-orbit .core{
-    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    width:108px;height:108px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-    background:linear-gradient(145deg,#1359A6,#0E9AA7);color:white;font-size:31px;font-weight:880;
-    box-shadow:0 15px 34px rgba(19,89,166,.24)
+.cover-axis{
+    margin-top:30px;
+    display:grid;grid-template-columns:repeat(4,1fr);
+    border-top:1px solid rgba(20,70,110,.14);
+    border-bottom:1px solid rgba(20,70,110,.14);
 }
-.home-orbit .dot{position:absolute;width:13px;height:13px;border-radius:50%;box-shadow:0 5px 18px rgba(19,89,166,.22)}
-.home-orbit .d1{left:87px;top:92px;background:#D9852F}
-.home-orbit .d2{right:71px;top:129px;background:#0E9AA7}
-.home-orbit .d3{left:60px;bottom:109px;background:#6B63B5}
-.home-orbit .d4{right:102px;bottom:55px;background:#1359A6}
-.home-orbit .label{position:absolute;color:#6E8194;font-size:10px;font-weight:800;letter-spacing:.12em}
-.home-orbit .l1{left:25px;top:67px}.home-orbit .l2{right:12px;top:105px}
-.home-orbit .l3{left:8px;bottom:79px}.home-orbit .l4{right:48px;bottom:29px}
-.home-metrics{
-    margin-top:18px;display:grid;grid-template-columns:2fr repeat(4,1fr);
-    border:1px solid rgba(19,89,166,.12);border-radius:18px;overflow:hidden;background:rgba(255,255,255,.76)
+.cover-axis-cell{padding:13px 14px 13px 0}
+.cover-axis-no{font-size:9px;font-weight:900;letter-spacing:.14em;color:#9AA9B5}
+.cover-axis-name{margin-top:5px;font-size:12px;font-weight:800;color:#314E67}
+.cover-note{
+    margin-top:22px;font-size:11px;color:#8191A0;line-height:1.7
 }
-.home-metric{padding:17px 20px;border-right:1px solid rgba(19,89,166,.09)}
-.home-metric:last-child{border-right:none}
-.home-metric-label{font-size:10px;letter-spacing:.12em;font-weight:820;color:#7B8EA2}
-.home-metric-value{margin-top:5px;font-size:20px;font-weight:840;color:#173650}
-.home-metric-note{margin-top:3px;font-size:11px;color:#8090A0}
-.home-loop{
-    display:grid;grid-template-columns:repeat(6,1fr);gap:0;margin:12px 0 20px;
-    border:1px solid rgba(19,89,166,.12);border-radius:20px;overflow:hidden;background:#fff
+
+/* ============================================================
+   Animated KDP crystal-structure motif
+   Note: a structural motif, not a literal discrete KDP molecule.
+   ============================================================ */
+.crystal-panel{
+    position:absolute;right:0;top:0;width:45%;height:100%;
+    display:flex;align-items:center;justify-content:center;
+    perspective:1000px;
 }
-.home-loop-cell{padding:20px 16px;min-height:112px;border-right:1px solid rgba(19,89,166,.09)}
-.home-loop-cell:last-child{border-right:none}
-.home-loop-id{font-size:10px;font-weight:900;letter-spacing:.1em;color:#99A9B8}
-.home-loop-title{margin-top:12px;font-size:15px;font-weight:850;color:#173650}
-.home-loop-note{margin-top:6px;font-size:11px;line-height:1.55;color:#75879A}
-.nav-panel{
-    margin-top:8px;padding:20px 22px 10px;border-radius:20px;
-    border:1px solid rgba(19,89,166,.11);
-    background:linear-gradient(135deg,rgba(255,255,255,.98),rgba(244,248,251,.96))
+.crystal-panel:before{
+    content:"";position:absolute;inset:8% 7% 8% 0;
+    background:
+      radial-gradient(circle at 52% 48%,rgba(36,151,174,.18),transparent 24%),
+      radial-gradient(circle at 52% 48%,rgba(19,89,166,.10),transparent 50%);
+    filter:blur(1px);
 }
-.nav-kicker{font-size:10px;font-weight:900;letter-spacing:.14em;color:#0E9AA7}
-.nav-title{font-size:22px;font-weight:870;color:#173650;margin-top:6px}
-.nav-note{font-size:12px;color:#718499;line-height:1.65;margin:5px 0 13px}
-.ai-strip{
-    margin:22px 0 6px;padding:26px 29px;border-radius:20px;
-    background:linear-gradient(135deg,#102F4E,#1359A6 58%,#0E8795);color:#fff;
-    display:flex;justify-content:space-between;gap:24px;align-items:center
+.crystal-caption{
+    position:absolute;right:30px;top:28px;text-align:right;
+    font-size:9px;line-height:1.65;letter-spacing:.16em;font-weight:850;color:#71899C
 }
-.ai-strip-title{font-size:21px;font-weight:850}
-.ai-strip-note{margin-top:6px;color:rgba(255,255,255,.74);font-size:13px;line-height:1.68}
-.ai-strip-mark{font-size:39px;font-weight:900;letter-spacing:.06em;opacity:.17}
+.crystal-scene{
+    position:relative;width:390px;height:390px;
+    transform-style:preserve-3d;
+}
+.crystal-spin{
+    position:absolute;left:50%;top:50%;
+    width:250px;height:250px;
+    transform-style:preserve-3d;
+    animation: crystalRotate 18s linear infinite;
+}
+@keyframes crystalRotate{
+    0%{transform:translate(-50%,-50%) rotateX(62deg) rotateZ(0deg)}
+    50%{transform:translate(-50%,-50%) rotateX(68deg) rotateZ(180deg)}
+    100%{transform:translate(-50%,-50%) rotateX(62deg) rotateZ(360deg)}
+}
+.crystal-scene:hover .crystal-spin{animation-play-state:paused}
+.atom{
+    position:absolute;left:50%;top:50%;
+    border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-size:10px;font-weight:900;
+    box-shadow:0 8px 22px rgba(20,60,95,.18);
+    transform-style:preserve-3d;
+}
+.atom-p{
+    width:52px;height:52px;background:linear-gradient(145deg,#1359A6,#0E8FA0);
+    color:#fff;transform:translate3d(-26px,-26px,38px);
+}
+.atom-o{
+    width:35px;height:35px;background:linear-gradient(145deg,#E8EDF2,#C4D2DE);
+    color:#27445F;border:1px solid rgba(255,255,255,.9)
+}
+.atom-k{
+    width:39px;height:39px;background:linear-gradient(145deg,#E6A251,#D77F2C);
+    color:white;border:1px solid rgba(255,255,255,.75)
+}
+.atom-h{
+    width:20px;height:20px;background:#F8FBFD;color:#6B7F91;
+    border:1px solid rgba(41,102,151,.24);font-size:8px
+}
+.o1{transform:translate3d(78px,-18px,70px)}
+.o2{transform:translate3d(-104px,18px,48px)}
+.o3{transform:translate3d(-40px,92px,-44px)}
+.o4{transform:translate3d(20px,-108px,-57px)}
+.k1{transform:translate3d(-140px,-80px,82px)}
+.k2{transform:translate3d(125px,82px,-72px)}
+.h1{transform:translate3d(-78px,-38px,24px)}
+.h2{transform:translate3d(78px,40px,-14px)}
+.bond{
+    position:absolute;left:50%;top:50%;height:2px;
+    transform-origin:0 50%;
+    background:linear-gradient(90deg,rgba(19,89,166,.75),rgba(14,154,167,.24));
+    border-radius:999px
+}
+.b1{width:94px;transform:translate(0,0) rotate(-13deg)}
+.b2{width:110px;transform:translate(0,0) rotate(165deg)}
+.b3{width:104px;transform:translate(0,0) rotate(103deg)}
+.b4{width:112px;transform:translate(0,0) rotate(-79deg)}
+.hbond{
+    position:absolute;left:50%;top:50%;height:1px;
+    border-top:1px dashed rgba(42,118,160,.34);
+    transform-origin:0 50%
+}
+.hb1{width:130px;transform:translate(-65px,-20px) rotate(-16deg)}
+.hb2{width:132px;transform:translate(-64px,29px) rotate(18deg)}
+.crystal-ring{
+    position:absolute;left:50%;top:50%;
+    border:1px solid rgba(34,104,154,.12);border-radius:50%;
+    transform:translate(-50%,-50%) rotateX(68deg);
+}
+.cr1{width:230px;height:230px}
+.cr2{width:310px;height:310px;transform:translate(-50%,-50%) rotateX(68deg) rotateZ(31deg)}
+.cr3{width:365px;height:365px;transform:translate(-50%,-50%) rotateX(72deg) rotateZ(-24deg)}
+.crystal-label{
+    position:absolute;font-size:9px;font-weight:850;letter-spacing:.13em;color:#7A90A1
+}
+.cl1{left:14px;top:62px}.cl2{right:2px;top:92px}.cl3{left:20px;bottom:52px}
+
+/* ============================================================
+   Project strip
+   ============================================================ */
+.project-strip{
+    margin-top:18px;
+    display:grid;grid-template-columns:2fr repeat(4,1fr);
+    border:1px solid rgba(23,74,115,.11);
+    border-radius:16px;overflow:hidden;background:#fff
+}
+.project-cell{padding:16px 20px;border-right:1px solid rgba(23,74,115,.08)}
+.project-cell:last-child{border-right:none}
+.project-k{font-size:9px;letter-spacing:.14em;font-weight:900;color:#91A1AE}
+.project-v{margin-top:4px;font-size:19px;font-weight:850;color:#163650}
+.project-n{margin-top:2px;font-size:11px;color:#8191A0}
+
+/* ============================================================
+   Research navigation
+   ============================================================ */
+.research-entry-head{
+    margin:2px 0 10px;padding-bottom:10px;border-bottom:1px solid rgba(23,74,115,.10)
+}
+.research-entry-kicker{font-size:9px;font-weight:900;letter-spacing:.15em;color:#0E8996}
+.research-entry-title{margin-top:5px;font-size:16px;font-weight:850;color:#1C3A54}
 div[data-testid="stPageLink"] a{
-    min-height:48px;border-radius:12px!important;
-    border:1px solid rgba(19,89,166,.12)!important;
-    background:#fff!important;color:#274662!important;
-    box-shadow:0 5px 15px rgba(31,68,103,.035);
-    transition:all .16s ease
+    min-height:44px;border-radius:9px!important;
+    border:1px solid rgba(23,74,115,.10)!important;
+    background:rgba(255,255,255,.82)!important;color:#29475F!important;
+    box-shadow:none!important;transition:all .15s ease
 }
 div[data-testid="stPageLink"] a:hover{
-    transform:translateY(-2px);border-color:rgba(19,89,166,.27)!important;
-    box-shadow:0 10px 24px rgba(31,68,103,.08)
+    transform:translateX(2px);
+    border-color:rgba(19,89,166,.26)!important;
+    background:rgba(244,249,252,.98)!important
 }
-@media(max-width:1200px){
-    .home-title{font-size:45px;max-width:700px}.home-orbit{right:-60px;opacity:.48}
-    .home-loop{grid-template-columns:repeat(3,1fr)}
-    .home-metrics{grid-template-columns:repeat(2,1fr)}
+.research-loop{
+    display:grid;grid-template-columns:repeat(6,1fr);
+    border:1px solid rgba(23,74,115,.10);border-radius:16px;overflow:hidden;background:#fff
+}
+.loop-cell{padding:18px 15px;min-height:110px;border-right:1px solid rgba(23,74,115,.08)}
+.loop-cell:last-child{border-right:none}
+.loop-no{font-size:9px;letter-spacing:.12em;font-weight:900;color:#A0ADBA}
+.loop-title{margin-top:11px;font-size:14px;font-weight:850;color:#1E3D56}
+.loop-note{margin-top:5px;font-size:10px;line-height:1.55;color:#7B8D9D}
+.analysis-layer{
+    margin:20px 0 8px;padding:22px 25px;border-left:3px solid #0E8996;
+    background:linear-gradient(90deg,rgba(14,137,150,.055),rgba(19,89,166,.018));
+    color:#315169
+}
+.analysis-layer-title{font-size:15px;font-weight:850;color:#1E455F}
+.analysis-layer-note{margin-top:5px;font-size:12px;line-height:1.7;color:#6D8193}
+@media(max-width:1250px){
+    .cover-title{font-size:45px}.cover-left{width:64%}.crystal-panel{width:42%;opacity:.72}
+    .research-loop{grid-template-columns:repeat(3,1fr)}
+    .project-strip{grid-template-columns:repeat(2,1fr)}
 }
 </style>
         """,
@@ -168,104 +287,148 @@ div[data-testid="stPageLink"] a:hover{
 
     st.markdown(
         f"""
-<div class="kdp-home-hero">
-  <div class="home-kicker">KDP · RESEARCH WORKSPACE</div>
-  <div class="home-title">KDP晶体缺陷与开裂<br>研究工作台</div>
-  <div class="home-sub">
-    面向KDP晶体生长、缺陷形成与开裂机制研究，将文献证据、科学假设、实验记录、
-    理论计算与AI分析组织为连续、可追溯的研究流程。
+<div class="kdp-cover">
+  <div class="cover-left">
+    <div class="cover-meta">KDP RESEARCH DOSSIER · DEFECTS / CRACKING / VALIDATION</div>
+    <div class="cover-title">KDP晶体缺陷与开裂<br>研究工作台</div>
+    <div class="cover-deck">
+      围绕KDP晶体生长、缺陷形成与裂纹萌生问题，统一组织文献证据、研究假设、
+      实验记录与理论验证，使研究过程能够持续积累、回查与迭代。
+    </div>
+    <div class="cover-axis">
+      <div class="cover-axis-cell"><div class="cover-axis-no">01</div><div class="cover-axis-name">文献证据</div></div>
+      <div class="cover-axis-cell"><div class="cover-axis-no">02</div><div class="cover-axis-name">实验验证</div></div>
+      <div class="cover-axis-cell"><div class="cover-axis-no">03</div><div class="cover-axis-name">理论计算</div></div>
+      <div class="cover-axis-cell"><div class="cover-axis-no">04</div><div class="cover-axis-name">研究决策</div></div>
+    </div>
+    <div class="cover-note">
+      智能分析作为贯穿式辅助层，用于证据整合、问题拆解、结果解释与下一步规划。
+    </div>
   </div>
-  <div class="home-tags">
-    <span class="home-tag">Evidence · 文献证据</span>
-    <span class="home-tag">Hypothesis · 科学假设</span>
-    <span class="home-tag">Experiment · 实验验证</span>
-    <span class="home-tag">Computation · 理论计算</span>
-    <span class="home-tag">Decision · 研究决策</span>
-  </div>
-  <div class="home-orbit">
-    <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
-    <div class="core">KDP</div>
-    <div class="dot d1"></div><div class="dot d2"></div><div class="dot d3"></div><div class="dot d4"></div>
-    <div class="label l1">DEFECT</div><div class="label l2">MECHANISM</div>
-    <div class="label l3">EXPERIMENT</div><div class="label l4">COMPUTATION</div>
+
+  <div class="crystal-panel">
+    <div class="crystal-caption">KDP STRUCTURAL MOTIF<br>PO₄ TETRAHEDRON · H-BOND NETWORK<br>HOVER TO PAUSE</div>
+    <div class="crystal-scene">
+      <div class="crystal-ring cr1"></div><div class="crystal-ring cr2"></div><div class="crystal-ring cr3"></div>
+      <div class="crystal-label cl1">PO₄ TETRAHEDRON</div>
+      <div class="crystal-label cl2">K⁺ ENVIRONMENT</div>
+      <div class="crystal-label cl3">H-BOND NETWORK</div>
+      <div class="crystal-spin">
+        <div class="bond b1"></div><div class="bond b2"></div><div class="bond b3"></div><div class="bond b4"></div>
+        <div class="hbond hb1"></div><div class="hbond hb2"></div>
+        <div class="atom atom-p">P</div>
+        <div class="atom atom-o o1">O</div><div class="atom atom-o o2">O</div>
+        <div class="atom atom-o o3">O</div><div class="atom atom-o o4">O</div>
+        <div class="atom atom-k k1">K</div><div class="atom atom-k k2">K</div>
+        <div class="atom atom-h h1">H</div><div class="atom atom-h h2">H</div>
+      </div>
+    </div>
   </div>
 </div>
-<div class="home-metrics">
-  <div class="home-metric"><div class="home-metric-label">ACTIVE PROJECT</div><div class="home-metric-value">{project_name}</div><div class="home-metric-note">状态：{project_status}</div></div>
-  <div class="home-metric"><div class="home-metric-label">EVIDENCE</div><div class="home-metric-value">{counts["evidence"]}</div><div class="home-metric-note">项目证据</div></div>
-  <div class="home-metric"><div class="home-metric-label">HYPOTHESES</div><div class="home-metric-value">{counts["hypothesis"]}</div><div class="home-metric-note">科学假设</div></div>
-  <div class="home-metric"><div class="home-metric-label">EXPERIMENTS</div><div class="home-metric-value">{counts["experiment"]}</div><div class="home-metric-note">受保护实验索引</div></div>
-  <div class="home-metric"><div class="home-metric-label">COMPUTATION</div><div class="home-metric-value">{counts["calculation"]}</div><div class="home-metric-note">计算任务 / 结果</div></div>
+
+<div class="project-strip">
+  <div class="project-cell"><div class="project-k">ACTIVE PROJECT</div><div class="project-v">{project_name}</div><div class="project-n">状态：{project_status}</div></div>
+  <div class="project-cell"><div class="project-k">EVIDENCE</div><div class="project-v">{counts["evidence"]}</div><div class="project-n">项目证据</div></div>
+  <div class="project-cell"><div class="project-k">HYPOTHESES</div><div class="project-v">{counts["hypothesis"]}</div><div class="project-n">科学假设</div></div>
+  <div class="project-cell"><div class="project-k">EXPERIMENTS</div><div class="project-v">{counts["experiment"]}</div><div class="project-n">受保护实验索引</div></div>
+  <div class="project-cell"><div class="project-k">COMPUTATION</div><div class="project-v">{counts["calculation"]}</div><div class="project-n">计算任务 / 结果</div></div>
 </div>
         """,
         unsafe_allow_html=True,
     )
 
     section_title(
-        "快速进入",
-        "以下入口使用Streamlit站内导航，不创建新的浏览器会话，项目记忆和实验保险库状态会继续保留",
+        "研究入口",
+        "按科研任务进入对应模块；站内切换保留当前项目上下文和实验保险库状态",
     )
-    st.markdown('<div class="nav-panel"><div class="nav-kicker">CORE ENTRY</div><div class="nav-title">从科研任务直接进入</div><div class="nav-note">首页负责导航，数据分析在对应模块按需加载。</div></div>', unsafe_allow_html=True)
 
-    r1 = st.columns(3, gap="medium")
-    with r1[0]:
-        _page_link("overview", "科研驾驶舱", ":material/dashboard:", "查看核心文献、专题活跃度与研究状态")
-    with r1[1]:
-        _page_link("project", "研究总控台", ":material/account_tree:", "管理项目记忆、假设与研究进度")
-    with r1[2]:
-        _page_link("ai", "AI科研助手", ":material/forum:", "结合当前项目上下文开展科研分析")
+    row1 = st.columns(4, gap="medium")
+    with row1[0]:
+        _group(
+            "总览与项目",
+            "OVERVIEW",
+            [
+                ("overview", "科研驾驶舱", ":material/dashboard:", "查看项目证据、研究状态与核心概览"),
+                ("project", "研究总控台", ":material/account_tree:", "管理项目记忆、假设与研究进度"),
+            ],
+        )
+    with row1[1]:
+        _group(
+            "文献与知识",
+            "EVIDENCE",
+            [
+                ("literature", "文献中心", ":material/library_books:", "检索、筛选和沉淀项目证据"),
+                ("knowledge", "知识图谱", ":material/hub:", "查看缺陷—机制—结果关系"),
+                ("topics", "专题调研", ":material/travel_explore:", "按研究主题形成专题证据"),
+                ("compare", "多文献比较", ":material/compare_arrows:", "比较多篇论文的方法与结论"),
+            ],
+        )
+    with row1[2]:
+        _group(
+            "研究问题与决策",
+            "DECISION",
+            [
+                ("direction", "研究方向决策", ":material/explore:", "形成候选课题与研究路线"),
+                ("gaps", "研究空白", ":material/lightbulb:", "识别潜在研究空白与待核问题"),
+                ("ai", "AI科研助手", ":material/forum:", "结合项目上下文进行科研分析"),
+            ],
+        )
+    with row1[3]:
+        _group(
+            "实验与验证",
+            "EXPERIMENT",
+            [
+                ("diagnosis", "开裂诊断", ":material/crisis_alert:", "结合证据和历史实验形成排查路径"),
+                ("experiment", "对照实验设计", ":material/fact_check:", "形成可证伪的实验方案"),
+                ("experiment_log", "实验记录与数据积累", ":material/database:", "进入受保护实验数据空间"),
+            ],
+        )
 
-    r2 = st.columns(3, gap="medium")
-    with r2[0]:
-        _page_link("literature", "文献中心", ":material/library_books:", "检索、筛选并沉淀项目证据")
-    with r2[1]:
-        _page_link("experiment_log", "实验记录与数据积累", ":material/database:", "进入受保护实验数据空间")
-    with r2[2]:
-        _page_link("theory", "理论计算规划与分析", ":material/science:", "组织DFT/MD/FEA计算研究流程")
+    row2 = st.columns([1, 1, 2], gap="medium")
+    with row2[0]:
+        _group(
+            "理论与计算",
+            "COMPUTATION",
+            [
+                ("theory", "理论计算规划与分析", ":material/science:", "组织DFT/MD/FEA计算流程与结果回填"),
+            ],
+        )
+    with row2[1]:
+        _group(
+            "成果与审计",
+            "OUTPUT",
+            [
+                ("reports", "报告中心", ":material/description:", "整理阶段结果和输出材料"),
+                ("audit", "数据审计", ":material/monitor_heart:", "检查数据、证据与项目记录状态"),
+            ],
+        )
+    with row2[2]:
+        st.markdown(
+            """
+<div class="analysis-layer">
+  <div class="analysis-layer-title">智能分析层</div>
+  <div class="analysis-layer-note">
+    负责文献证据整合、跨模块上下文调用、问题拆解、结果解释与下一步规划。
+    受保护实验原始数据仍由实验保险库单独控制，不默认进入外部模型。
+  </div>
+</div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     section_title(
         "研究闭环",
-        "同一科研问题从证据、假设和验证继续迭代，而不是停留在一次AI回答",
+        "文献、实验和理论验证共同服务于同一个科学问题，结论再回到下一轮实验与计算",
     )
     st.markdown(
         """
-<div class="home-loop">
-  <div class="home-loop-cell"><div class="home-loop-id">01 · EVIDENCE</div><div class="home-loop-title">文献证据</div><div class="home-loop-note">核心论文、方法依据、共识与争议</div></div>
-  <div class="home-loop-cell"><div class="home-loop-id">02 · HYPOTHESIS</div><div class="home-loop-title">科学假设</div><div class="home-loop-note">形成可验证、可否证的机制问题</div></div>
-  <div class="home-loop-cell"><div class="home-loop-id">03 · EXPERIMENT</div><div class="home-loop-title">实验验证</div><div class="home-loop-note">条件、现象、失败与对照结果</div></div>
-  <div class="home-loop-cell"><div class="home-loop-id">04 · COMPUTATION</div><div class="home-loop-title">理论验证</div><div class="home-loop-note">DFT / MD / FEA与外部求解器衔接</div></div>
-  <div class="home-loop-cell"><div class="home-loop-id">05 · AI SYNTHESIS</div><div class="home-loop-title">AI综合分析</div><div class="home-loop-note">读取允许访问的项目研究上下文</div></div>
-  <div class="home-loop-cell"><div class="home-loop-id">06 · DECISION</div><div class="home-loop-title">下一步决策</div><div class="home-loop-note">课题、实验、表征与计算继续迭代</div></div>
-</div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    pcols = st.columns(4, gap="medium")
-    with pcols[0]:
-        st.markdown("**领域与选题**  \n文献 → 专题 → 潜在空白 → 方向决策")
-        _page_link("direction", "进入研究方向决策 →")
-    with pcols[1]:
-        st.markdown("**开裂与实验**  \n现象 → 诊断 → 历史实验 → 对照验证")
-        _page_link("diagnosis", "进入开裂诊断 →")
-    with pcols[2]:
-        st.markdown("**机理与计算**  \n假设 → 方法文献 → DFT/MD/FEA → 验证")
-        _page_link("theory", "进入理论计算 →")
-    with pcols[3]:
-        st.markdown("**数据驱动**  \n实验积累 → 数据质量 → ML → 条件优化")
-        _page_link("experiment_log", "进入实验数据空间 →")
-
-    st.markdown(
-        """
-<div class="ai-strip">
-  <div>
-    <div class="ai-strip-title">AI 是平台的智能引擎，而不是独立聊天窗口</div>
-    <div class="ai-strip-note">
-      AI科研助手围绕当前研究项目调用文献证据、科学假设和允许访问的研究记忆，
-      用于解释、比较、归纳与规划下一步；受保护实验原始数据仍由实验保险库权限控制。
-    </div>
-  </div>
-  <div class="ai-strip-mark">AI × KDP</div>
+<div class="research-loop">
+  <div class="loop-cell"><div class="loop-no">01 · EVIDENCE</div><div class="loop-title">证据建立</div><div class="loop-note">核心论文、方法依据、共识与争议</div></div>
+  <div class="loop-cell"><div class="loop-no">02 · QUESTION</div><div class="loop-title">问题与假设</div><div class="loop-note">把现象转化为可验证、可否证的问题</div></div>
+  <div class="loop-cell"><div class="loop-no">03 · EXPERIMENT</div><div class="loop-title">实验检验</div><div class="loop-note">条件、现象、失败与对照结果连续积累</div></div>
+  <div class="loop-cell"><div class="loop-no">04 · COMPUTATION</div><div class="loop-title">理论验证</div><div class="loop-note">DFT / MD / FEA解释局部机制和应力过程</div></div>
+  <div class="loop-cell"><div class="loop-no">05 · SYNTHESIS</div><div class="loop-title">综合判断</div><div class="loop-note">比较文献、实验和计算是否相互支持</div></div>
+  <div class="loop-cell"><div class="loop-no">06 · ITERATION</div><div class="loop-title">下一轮迭代</div><div class="loop-note">更新研究假设，规划下一组实验或计算</div></div>
 </div>
         """,
         unsafe_allow_html=True,

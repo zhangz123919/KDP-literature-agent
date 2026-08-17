@@ -703,6 +703,70 @@ def _constellation_positions(names, radius, z_base=0.0, phase=0.0, y_scale=.82, 
     return out
 
 
+
+def _fibonacci_shell_positions(names, radius, phase=0.0):
+    """Evenly distribute nodes on a spherical shell."""
+    names = list(names)
+    n = max(1, len(names))
+    out = {}
+    golden = math.pi * (3.0 - math.sqrt(5.0))
+
+    for i, name in enumerate(names):
+        y = 1 - (2 * (i + .5) / n)
+        r_xy = math.sqrt(max(0.0, 1 - y * y))
+        theta = golden * i + phase
+        x = radius * r_xy * math.cos(theta)
+        z = radius * r_xy * math.sin(theta)
+        out[name] = (x, radius * y, z)
+
+    return out
+
+
+def _sphere_wireframe(radius, color="rgba(110,160,205,.10)", width=1.0):
+    """One lightweight trace containing latitude/longitude wireframe lines."""
+    xs, ys, zs = [], [], []
+
+    # latitudes
+    for lat in [-50, -25, 0, 25, 50]:
+        phi = math.radians(lat)
+        rr = radius * math.cos(phi)
+        yy = radius * math.sin(phi)
+        a = np.linspace(0, 2 * math.pi, 110)
+        xs.extend((rr * np.cos(a)).tolist() + [None])
+        ys.extend(([yy] * len(a)) + [None])
+        zs.extend((rr * np.sin(a)).tolist() + [None])
+
+    # longitudes
+    for lon in [0, 45, 90, 135]:
+        lam = math.radians(lon)
+        a = np.linspace(-math.pi / 2, math.pi / 2, 100)
+        x = radius * np.cos(a) * math.cos(lam)
+        y = radius * np.sin(a)
+        z = radius * np.cos(a) * math.sin(lam)
+        xs.extend(x.tolist() + [None])
+        ys.extend(y.tolist() + [None])
+        zs.extend(z.tolist() + [None])
+
+    return go.Scatter3d(
+        x=xs, y=ys, z=zs,
+        mode="lines",
+        line=dict(color=color, width=width),
+        hoverinfo="skip",
+        showlegend=False,
+    )
+
+
+def _sphere_label(radius, text, color):
+    return go.Scatter3d(
+        x=[0], y=[radius + .28], z=[0],
+        mode="text",
+        text=[text],
+        textfont=dict(color=color, size=9),
+        hoverinfo="skip",
+        showlegend=False,
+    )
+
+
 def _orbit_ellipse(radius, z=0.0, phase=0.0, y_scale=.82, color="rgba(120,160,210,.16)"):
     a = np.linspace(0, 2 * math.pi, 180)
     x = radius * np.cos(a)
@@ -808,9 +872,11 @@ def _orbital_graph(
     mc = work.groupby("作用机制")["文献数"].sum().sort_values(ascending=False)
     oc = work.groupby("宏观结果")["文献数"].sum().sort_values(ascending=False)
 
-    source_pos = _constellation_positions(list(sc.index), 2.15, z_base=.15, phase=.18, y_scale=.76, z_wave=.36)
-    mech_pos = _constellation_positions(list(mc.index), 3.45, z_base=.52, phase=.72, y_scale=.82, z_wave=.52)
-    out_pos = _constellation_positions(list(oc.index), 4.82, z_base=-.28, phase=1.18, y_scale=.88, z_wave=.62)
+    # Three concentric spherical research shells:
+    # inner = source, middle = mechanism, outer = outcome.
+    source_pos = _fibonacci_shell_positions(list(sc.index), 2.05, phase=.18)
+    mech_pos = _fibonacci_shell_positions(list(mc.index), 3.35, phase=.86)
+    out_pos = _fibonacci_shell_positions(list(oc.index), 4.65, phase=1.42)
 
     positions = {"CENTER": (0., 0., 0.)}
     positions.update({"S|" + k: v for k, v in source_pos.items()})
@@ -851,29 +917,14 @@ def _orbital_graph(
         )
     )
 
-    # Orbital architecture.
-    fig.add_trace(_orbit_ellipse(2.15, .15, color="rgba(230,139,73,.20)"))
-    fig.add_trace(_orbit_ellipse(3.45, .52, phase=.7, color="rgba(112,128,220,.22)"))
-    fig.add_trace(_orbit_ellipse(4.82, -.28, phase=1.2, color="rgba(41,190,190,.21)"))
+    # Spherical-shell architecture: subtle scientific wireframes.
+    fig.add_trace(_sphere_wireframe(2.05, "rgba(232,145,63,.14)", 1.0))
+    fig.add_trace(_sphere_wireframe(3.35, "rgba(118,131,226,.13)", 1.0))
+    fig.add_trace(_sphere_wireframe(4.65, "rgba(40,181,184,.12)", 1.0))
 
-    # Secondary tilted rings to create depth.
-    for radius, z0, color, phase in [
-        (2.15, .15, "rgba(230,139,73,.08)", .5),
-        (3.45, .52, "rgba(112,128,220,.09)", 1.0),
-        (4.82, -.28, "rgba(41,190,190,.08)", 1.6),
-    ]:
-        a = np.linspace(0, 2 * math.pi, 160)
-        fig.add_trace(
-            go.Scatter3d(
-                x=radius * .72 * np.cos(a),
-                y=radius * np.sin(a),
-                z=z0 + .22 * np.sin(a + phase),
-                mode="lines",
-                line=dict(color=color, width=1),
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
+    fig.add_trace(_sphere_label(2.05, "SHELL 01 · DEFECT / STRESS", "rgba(235,166,99,.62)"))
+    fig.add_trace(_sphere_label(3.35, "SHELL 02 · MECHANISM", "rgba(157,166,240,.62)"))
+    fig.add_trace(_sphere_label(4.65, "SHELL 03 · OUTCOME", "rgba(95,215,215,.58)"))
 
     # Center-to-source spokes, bucketed into a single trace.
     cx, cy, cz = [], [], []
@@ -1065,29 +1116,11 @@ def _orbital_graph(
     add_layer_nodes(mc.index, mc, "M", "#7683E2", "局部作用机制", related_mechs)
     add_layer_nodes(oc.index, oc, "O", "#28B5B8", "宏观结果", related_outcomes)
 
-    # Orbital labels in 3D space.
-    layer_labels = [
-        (-2.55, -1.45, 1.10, "LAYER 01  ·  DEFECT / STRESS"),
-        (2.65, 2.15, 1.45, "LAYER 02  ·  MECHANISM"),
-        (-4.65, 2.35, -.55, "LAYER 03  ·  OUTCOME"),
-    ]
-    fig.add_trace(
-        go.Scatter3d(
-            x=[p[0] for p in layer_labels],
-            y=[p[1] for p in layer_labels],
-            z=[p[2] for p in layer_labels],
-            mode="text",
-            text=[p[3] for p in layer_labels],
-            textfont=dict(color="rgba(175,196,218,.62)", size=9),
-            hoverinfo="skip",
-            showlegend=False,
-        )
-    )
 
     cameras = {
-        "透视": dict(eye=dict(x=1.46, y=1.62, z=1.12), center=dict(x=0, y=0, z=.02)),
-        "俯视": dict(eye=dict(x=.08, y=.08, z=2.55), center=dict(x=0, y=0, z=0)),
-        "侧视": dict(eye=dict(x=2.55, y=.10, z=.32), center=dict(x=0, y=0, z=.05)),
+        "透视": dict(eye=dict(x=1.55, y=1.72, z=1.28), center=dict(x=0, y=0, z=0)),
+        "俯视": dict(eye=dict(x=.06, y=.10, z=2.72), center=dict(x=0, y=0, z=0)),
+        "侧视": dict(eye=dict(x=2.72, y=.08, z=.28), center=dict(x=0, y=0, z=0)),
     }
 
     focus_label = focus or "GLOBAL"
@@ -1120,7 +1153,7 @@ def _orbital_graph(
                 x=.015, y=.985, xref="paper", yref="paper",
                 showarrow=False, align="left",
                 text=(
-                    "<b>KDP MECHANISM CONSTELLATION</b>"
+                    "<b>KDP SPHERICAL MECHANISM MAP</b>"
                     f"<br><span style='font-size:10px;color:#86A0B8'>FOCUS · {focus_label}</span>"
                 ),
                 font=dict(color="#DDEAF7", size=12),
@@ -1381,8 +1414,8 @@ def knowledge_graph():
 
     if section == "3D关系星图":
         section_title(
-            "KDP三维机制星图",
-            "用三层轨道表达“缺陷/应力来源 → 局部机制 → 宏观结果”，节点大小代表关系证据量，曲线强度代表当前文献库中的关系厚度",
+            "KDP球壳机制星图",
+            "以三层球壳组织“缺陷/应力来源 → 局部机制 → 宏观结果”，节点大小表示证据量，弧线强度表示关系厚度；聚焦模式可追踪完整机制路径",
         )
 
         c1, c2, c3, c4 = st.columns([1.05, .9, 1.05, .95])
