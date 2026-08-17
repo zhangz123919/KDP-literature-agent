@@ -28,6 +28,11 @@ TOPICS = {
     "光谱与显微表征": ["raman","ftir","xrd","afm","sem","tem","spectroscopy","microscopy","拉曼","红外","显微","x射线"],
 }
 
+CORE_TOPICS = {
+    k: v for k, v in TOPICS.items()
+    if k != "DKDP氘化与同位素"
+}
+
 INTENT_RULES = {
     "氢空位": {
         "triggers": ["氢空位","质子空位","质子缺失","hydrogen vacancy","proton vacancy","h vacancy"],
@@ -167,6 +172,36 @@ def load_data():
             | _series_hit(df["_text"], ["dkdp","kd2po4","deuterated potassium dihydrogen phosphate"])
         )
 
+    # 材料层级：默认以 KDP 为核心研究对象。
+    # DKDP 仅作为同位素对照/扩展证据，不再与 KDP 并列占据主研究层级。
+    kdp_hit = _series_hit(
+        df["_text"],
+        ["kdp", "kh2po4", "potassium dihydrogen phosphate"],
+    )
+    dkdp_hit = _series_hit(
+        df["_text"],
+        [
+            "dkdp",
+            "kd2po4",
+            "potassium dideuterium phosphate",
+            "deuterated potassium dihydrogen phosphate",
+        ],
+    )
+
+    comparison = related & kdp_hit & dkdp_hit
+    dkdp_only = related & dkdp_hit & ~kdp_hit
+    kdp_primary = related & ~dkdp_only
+
+    df["_KDP命中"] = kdp_hit
+    df["_DKDP命中"] = dkdp_hit
+    df["_KDP主研究"] = kdp_primary
+    df["材料层级"] = np.select(
+        [comparison, dkdp_only, kdp_primary],
+        ["KDP-DKDP对照", "DKDP扩展", "KDP主线"],
+        default="非核心/待核",
+    )
+
+    # 保留旧字段值以兼容既有页面/缓存；新的页面通过 material_scope() 控制材料范围。
     df["V5相关池"] = np.where(related, "KDP/DKDP相关池", "非核心/待核")
 
     score = (
@@ -180,19 +215,60 @@ def load_data():
     df["V5科研优先分"] = score.clip(0,100).round(1)
 
     tier = pd.Series("C 扩展/背景", index=df.index, dtype="object")
-    ranked = df[related].sort_values(["V5科研优先分","被引次数","年份"], ascending=False)
+    ranked = df[kdp_primary].sort_values(["V5科研优先分","被引次数","年份"], ascending=False)
     tier.loc[ranked.index[:50]] = "S 核心 50"
     tier.loc[ranked.index[50:200]] = "A 重点 150"
     tier.loc[ranked.index[200:1000]] = "B 扩展 800"
+    # DKDP-only 文献保留，但不占用 KDP 的 S/A/B 核心名额。
+    tier.loc[df.index[dkdp_only]] = "C 扩展/背景"
     tier.loc[df.index[~related]] = "D 非核心/待核"
     df["V5推荐等级"] = tier
     return df
 
+
+def material_scope(df, mode="KDP主线"):
+    """
+    默认研究对象为 KDP。
+    - KDP主线：KDP直接文献 + 同时讨论KDP/DKDP的对照文献
+    - DKDP对照：显式DKDP/氘化文献，仅在需要时调用
+    - 全部相关：原KDP/DKDP相关池，用于审计和扩展检索
+    - 全库：不做材料范围过滤
+    """
+    if df.empty:
+        return df.copy()
+
+    if mode in {"KDP主线", "相关池"}:
+        if "_KDP主研究" in df.columns:
+            return df[df["_KDP主研究"]].copy()
+        related = df["V5相关池"].eq("KDP/DKDP相关池")
+        dkdp = _series_hit(df["_text"], ["dkdp", "kd2po4", "deuterated potassium dihydrogen phosphate"])
+        kdp = _series_hit(df["_text"], ["kdp", "kh2po4", "potassium dihydrogen phosphate"])
+        return df[related & ~(dkdp & ~kdp)].copy()
+
+    if mode == "DKDP对照":
+        if "_DKDP命中" in df.columns:
+            return df[df["_DKDP命中"] & df["V5相关池"].eq("KDP/DKDP相关池")].copy()
+        return df[
+            df["V5相关池"].eq("KDP/DKDP相关池")
+            & _series_hit(df["_text"], ["dkdp", "kd2po4", "deuterated potassium dihydrogen phosphate"])
+        ].copy()
+
+    if mode in {"全部相关", "相关扩展"}:
+        return df[df["V5相关池"] == "KDP/DKDP相关池"].copy()
+
+    return df.copy()
+
+
 def search_papers(df, q, top_k=100, scope="相关池"):
     work = df.copy()
-    if scope == "相关池":
-        work = work[work["V5相关池"] == "KDP/DKDP相关池"]
+    if scope in {"相关池", "KDP主线"}:
+        work = material_scope(work, "KDP主线")
+    elif scope in {"全部相关", "相关扩展"}:
+        work = material_scope(work, "全部相关")
+    elif scope == "DKDP对照":
+        work = material_scope(work, "DKDP对照")
     elif scope == "S+A":
+        work = material_scope(work, "KDP主线")
         work = work[work["V5推荐等级"].isin(["S 核心 50","A 重点 150"])]
 
     if work.empty:
@@ -282,17 +358,18 @@ def topic_search(df, topic, top_k=100, scope="相关池"):
     return search_papers(df, " ".join(TOPICS.get(topic,[topic])), top_k, scope)
 
 @st.cache_data(show_spinner=False, ttl=3600)
-def topic_stats(df):
+def topic_stats(df, material="KDP主线"):
     """
-    专题规模统计必须统计“真实命中”，而不是把全库排序后全部算进去。
-    旧逻辑使用 topic_search(..., top_k=len(rel))，因此很多专题都会被统计成
-    约等于整个相关池的规模，造成“所有柱子都接近 5928”的假象。
+    默认统计 KDP 主研究文献。
+    DKDP 同位素主题不在默认总览中高频展示；需要对照研究时可显式切到 DKDP对照。
     """
-    rel = df[df["V5相关池"] == "KDP/DKDP相关池"].copy()
+    rel = material_scope(df, material)
     max_year = int(rel["年份"].max()) if len(rel) else 2026
 
+    topic_map = TOPICS if material == "DKDP对照" else CORE_TOPICS
+
     rows = []
-    for topic, terms in TOPICS.items():
+    for topic, terms in topic_map.items():
         hit = _series_hit(rel["_text"], terms)
         d = rel[hit].copy()
 
@@ -307,6 +384,7 @@ def topic_stats(df):
         })
 
     return pd.DataFrame(rows)
+
 
 def compact_context(df, maxp=15):
     blocks = []

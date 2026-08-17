@@ -21,7 +21,7 @@ from views import (
 )
 
 st.set_page_config(
-    page_title="KDP/DKDP 研究工作台",
+    page_title="KDP 晶体研究工作台",
     page_icon="K",
     layout="wide",
     initial_sidebar_state="expanded",

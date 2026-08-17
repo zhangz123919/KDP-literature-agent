@@ -1059,7 +1059,7 @@ section[data-testid="stSidebar"] [aria-current="page"] * {{
     font-weight: 760 !important;
 }}
 
-/* 品牌区：形成自己的 KDP/DKDP 识别，不直接套 AI 产品 logo */
+/* 品牌区：形成自己的 KDP 研究识别，不直接套 AI 产品 logo */
 .kdp-brand {{
     position: relative;
     overflow: hidden;
@@ -1073,7 +1073,7 @@ section[data-testid="stSidebar"] [aria-current="page"] * {{
 }}
 
 .kdp-brand::after {{
-    content: "KH₂PO₄ · KD₂PO₄";
+    content: "KH₂PO₄";
     position: absolute;
     right: 12px;
     bottom: 9px;
@@ -1141,7 +1141,7 @@ section[data-testid="stSidebar"] [aria-current="page"] * {{
 }}
 
 .kdp-hero::after {{
-    content: "KDP / DKDP" !important;
+    content: "KDP" !important;
     width: auto !important;
     height: auto !important;
     right: 28px !important;
@@ -1509,7 +1509,7 @@ def sidebar_brand():
         """
 <div class="kdp-brand">
     <div class="kdp-brand-mark">KDP</div>
-    <div class="kdp-brand-title">KDP / DKDP 研究工作台</div>
+    <div class="kdp-brand-title">KDP 晶体研究工作台</div>
     <div class="kdp-brand-sub">晶体缺陷 · 生长 · 开裂<br>Evidence → Mechanism → Validation</div>
 </div>
 """,
@@ -1534,7 +1534,7 @@ def sidebar_ai_status(ok: bool, model: str):
     st.sidebar.caption("文献优先级不删库；联网检索按需参与分析，结果保留来源。")
 
 
-def page_header(title: str, subtitle: str, eyebrow: str = "KDP / DKDP RESEARCH WORKSPACE"):
+def page_header(title: str, subtitle: str, eyebrow: str = "KDP CRYSTAL RESEARCH WORKSPACE"):
     st.markdown(
         f"""
 <div class="kdp-hero">

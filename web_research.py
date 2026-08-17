@@ -19,20 +19,20 @@ QUERY_HINTS = {
     "裂纹": "KDP potassium dihydrogen phosphate crack fracture thermal stress temperature gradient",
     "降温": "KDP potassium dihydrogen phosphate cooling thermal stress temperature gradient crack fracture",
     "热应力": "KDP potassium dihydrogen phosphate thermal stress thermal expansion crack fracture",
-    "包裹体": "KDP DKDP crystal inclusion solution inclusion scattering center defect crack",
-    "位错": "KDP DKDP crystal dislocation lattice strain crack defect",
-    "过饱和度": "KDP DKDP crystal supersaturation rapid growth growth defect inclusion",
-    "快速生长": "KDP DKDP crystal rapid growth supersaturation growth defect",
+    "包裹体": "KDP potassium dihydrogen phosphate crystal inclusion solution inclusion scattering center defect crack",
+    "位错": "KDP potassium dihydrogen phosphate crystal dislocation lattice strain crack defect",
+    "过饱和度": "KDP potassium dihydrogen phosphate crystal supersaturation rapid growth growth defect inclusion",
+    "快速生长": "KDP potassium dihydrogen phosphate crystal rapid growth supersaturation growth defect",
     "籽晶": "KDP seed crystal temperature nonuniformity orientation fixation stress crack growth",
     "固定方式": "KDP seed fixation mounting constraint thermal stress cracking",
     "亚表面损伤": "KDP crystal subsurface damage polishing grinding machining laser damage",
-    "激光损伤": "KDP DKDP crystal laser damage LIDT defect absorption",
-    "损伤阈值": "KDP DKDP laser induced damage threshold LIDT defect",
-    "弱吸收": "KDP DKDP weak absorption photothermal localized absorption defect",
-    "第一性原理": "KDP DKDP first principles DFT defect electronic structure",
-    "DFT": "KDP DKDP density functional theory DFT defect electronic structure",
-    "杂质": "KDP DKDP impurity doping defect optical absorption growth",
-    "掺杂": "KDP DKDP doping impurity defect optical properties",
+    "激光损伤": "KDP potassium dihydrogen phosphate crystal laser damage LIDT defect absorption",
+    "损伤阈值": "KDP potassium dihydrogen phosphate laser induced damage threshold LIDT defect",
+    "弱吸收": "KDP potassium dihydrogen phosphate weak absorption photothermal localized absorption defect",
+    "第一性原理": "KDP potassium dihydrogen phosphate first principles DFT defect electronic structure",
+    "DFT": "KDP potassium dihydrogen phosphate density functional theory DFT defect electronic structure",
+    "杂质": "KDP potassium dihydrogen phosphate impurity doping defect optical absorption growth",
+    "掺杂": "KDP potassium dihydrogen phosphate doping impurity defect optical properties",
     "Materials Studio": "KDP crystal Materials Studio defect modeling first principles",
     "Quantum ESPRESSO": "KDP crystal Quantum ESPRESSO DFT defect calculation",
     "VASP": "KDP crystal VASP DFT defect calculation",
@@ -102,6 +102,24 @@ def _has_material_anchor(text: str) -> bool:
     return any(re.search(p, text, flags=re.I) for p in MATERIAL_ANCHORS)
 
 
+def _asks_dkdp(question: str) -> bool:
+    q = str(question or "")
+    return bool(re.search(
+        r"\bDKDP\b|\bKD2PO4\b|deuterat|dideuterium|氘化|氘代|同位素对照",
+        q,
+        flags=re.I,
+    ))
+
+
+def _has_kdp_anchor(text: str) -> bool:
+    text = _strip(text)
+    return bool(re.search(
+        r"\bKDP\b|\bKH2PO4\b|potassium\s+dihydrogen\s+phosphate",
+        text,
+        flags=re.I,
+    ))
+
+
 def _topic_terms(question: str) -> List[str]:
     """
     从本次问题里提取少量主题词，用于外部结果二次排序。
@@ -128,7 +146,7 @@ def _quality_score(item: Dict, question: str) -> float:
 
     score = 0.0
 
-    # KDP/DKDP材料锚点是硬要求，同时也作为最主要的加分项。
+    # 材料锚点是硬要求；默认优先KDP，DKDP只在显式对照问题中进入。
     if _has_material_anchor(text):
         score += 10.0
 
@@ -162,7 +180,7 @@ def _quality_score(item: Dict, question: str) -> float:
 def _filter_and_rank(items: List[Dict], question: str, limit: int = 8) -> List[Dict]:
     """
     外部检索质量闸门：
-    1. 必须明确涉及KDP/DKDP/KH2PO4/KD2PO4；
+    1. 默认必须明确涉及KDP/KH2PO4；只有用户主动询问DKDP/氘化时才允许DKDP-only结果；
     2. 拒绝“标题被整页正文污染”的结果；
     3. 学术来源、摘要、DOI和主题命中优先；
     4. 最终只保留少量高相关来源。
@@ -181,8 +199,13 @@ def _filter_and_rank(items: List[Dict], question: str, limit: int = 8) -> List[D
             snippet,
         ])
 
-        if not _has_material_anchor(combined):
-            continue
+        if _asks_dkdp(question):
+            if not _has_material_anchor(combined):
+                continue
+        else:
+            # 默认只保留KDP直接相关结果；DKDP-only不进入普通KDP问答。
+            if not _has_kdp_anchor(combined):
+                continue
 
         # 极长网页标题通常是搜索引擎把正文/目录一起抓进来了。
         if item.get("source_type") == "网页资料" and len(original_title) > 420:
@@ -220,7 +243,7 @@ def build_query(question: str) -> str:
         chunks.append(" ".join(eng[:20]))
 
     if not chunks:
-        chunks.append("KDP DKDP crystal " + q)
+        chunks.append("KDP potassium dihydrogen phosphate crystal " + q)
 
     return " ".join(dict.fromkeys(" ".join(chunks).split()))[:650]
 
@@ -233,7 +256,7 @@ def search_crossref(question: str, max_results: int = 6) -> List[Dict]:
             "rows": max_results,
             "select": "DOI,title,author,published,published-print,published-online,issued,created,container-title,URL,abstract,type",
         },
-        headers={"User-Agent": "KDP-DKDP-Research-Agent/1.1"},
+        headers={"User-Agent": "KDP-Crystal-Research-Agent/1.2"},
         timeout=5,
     )
     response.raise_for_status()
@@ -389,7 +412,7 @@ def research_web(question: str) -> Tuple[str, List[Dict], Dict]:
             except Exception as exc:
                 status[name] = f"失败 {type(exc).__name__}"
 
-    # 外部检索必须先经过KDP/DKDP材料相关性闸门。
+    # 外部检索必须先经过KDP材料相关性闸门；DKDP仅在显式对照问题中放行。
     # 这一步会过滤掉“石墨烯 vacancy”“其他有机二氢磷酸盐”
     # 以及搜索引擎误抓取的植物学/目录页等结果。
     results = _filter_and_rank(results, question, limit=8)

@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from openai import OpenAI
 
-from engine import TOPICS, load_data, search_papers, topic_search, topic_stats
+from engine import CORE_TOPICS, TOPICS, load_data, material_scope, search_papers, topic_search, topic_stats
 from reports import docx_bytes, excel_bytes
 from security import enforce_ai_quota, remaining_ai_calls, safe_error, validate_user_text
 from ui import COLORS, insight_strip, metric_cards, page_header, plotly, section_title, soft_note
@@ -20,7 +20,7 @@ from web_research import research_web, source_links_markdown
 
 
 SYSTEM = """
-你是“KDP/DKDP晶体开裂与缺陷研究方向决策顾问”。
+你是“KDP晶体缺陷与开裂研究方向决策顾问”。
 
 你的任务不是泛泛介绍KDP，而是基于用户已有的大规模文献数据库、代表性论文证据和最新外部资料，
 帮助硕博研究者确定未来6–12个月可以真正推进的研究问题与研究课题。
@@ -38,6 +38,7 @@ SYSTEM = """
 6. 课题推荐必须兼顾科学价值、可验证性、工作量、实验/计算条件和毕业周期。
 7. 具体题目建议要落到“研究对象 + 科学问题 + 方法 + 可验证结果”，不能只写大方向。
 8. 对于每个推荐题目，必须给出风险和“如果做不出来怎么办”的备选路线。
+9. 默认研究对象必须是 KDP。除非用户明确提出氘化/同位素比较，DKDP只能作为对照或扩展证据，不得与KDP并列成为报告主标题、主研究方向或默认候选课题。
 """
 
 
@@ -65,14 +66,14 @@ def _build_evidence_pack(
     - 每个专题在命中文献中按科研优先分/被引/年份选代表文献
     - 只有用户自定义重点问题再调用一次 search_papers
     """
-    rel = df[df["V5相关池"] == "KDP/DKDP相关池"].copy()
+    rel = material_scope(df, "KDP主线")
     if rel.empty:
         return df.head(0).copy()
 
     pieces = []
     text_series = rel["_text"].fillna("").astype(str)
 
-    for topic, terms in TOPICS.items():
+    for topic, terms in CORE_TOPICS.items():
         terms = [str(t).strip() for t in terms if str(t).strip()]
         if not terms:
             continue
@@ -90,7 +91,7 @@ def _build_evidence_pack(
             pieces.append(d)
 
     if str(focus or "").strip():
-        targeted = search_papers(df, focus, 14, "相关池").copy()
+        targeted = search_papers(df, focus, 14, "KDP主线").copy()
         if len(targeted):
             targeted["_方向专题"] = "用户重点问题"
             pieces.append(targeted)
@@ -373,7 +374,7 @@ def stream_direction_report(
     focus = validate_user_text(focus, "重点问题")
     constraints = validate_user_text(constraints, "现实约束")
 
-    yield {"type": "stage", "text": "正在扫描全部 KDP/DKDP 相关文献的专题结构…"}
+    yield {"type": "stage", "text": "正在扫描 KDP 主研究文献的专题结构…"}
 
     stats = _topic_snapshot(df)
 
@@ -390,7 +391,7 @@ def stream_direction_report(
     }
 
     web_query = (
-        "KDP DKDP crystal cracking defects growth thermal stress inclusion "
+        "KDP KH2PO4 crystal cracking defects growth thermal stress inclusion "
         "hydrogen vacancy laser damage first principles review research gap 2022 2026 "
         + str(focus or "")
     )
@@ -415,7 +416,7 @@ def stream_direction_report(
 {quick_instruction}
 
 请生成一份可以直接用于“本人 + 导师共同确定研究课题”的
-《KDP/DKDP晶体缺陷、开裂与损伤研究方向决策型文献调研报告》。
+《KDP晶体缺陷、开裂与损伤研究方向决策型文献调研报告》。
 
 【研究者重点关注】
 {focus or "尚未限定，请从全景调研中识别最值得深入的问题"}
@@ -435,7 +436,7 @@ def stream_direction_report(
 {_stats_text(stats)}
 
 注意：
-上述统计来自用户KDP/DKDP相关文献池的全库扫描。
+上述统计来自KDP主研究文献池的全库扫描；DKDP文献仅在同位素对照确有帮助时作为扩展证据。
 它用于判断领域规模、近期活跃度和方法覆盖；
 但“研究空白”不能仅靠文献数量自动得出。
 
@@ -466,7 +467,7 @@ def stream_direction_report(
 - 当前调研能够回答什么、不能回答什么
 - 哪些关键结论仍需回查全文
 
-# 2. KDP/DKDP领域整体研究版图
+# 2. KDP领域整体研究版图
 不要按论文逐篇罗列。
 按“研究问题”组织：
 - 晶体生长与快速生长
@@ -477,7 +478,7 @@ def stream_direction_report(
 - 表面/亚表面加工损伤
 - 热应力、残余应力与开裂
 - 激光损伤/LIDT
-- DKDP氘化与同位素
+- 同位素对照（仅在有助于验证KDP机制时简要讨论）
 - DFT/MD/有限元
 - Raman/FTIR/XRD/AFM/光热等表征
 
@@ -668,11 +669,11 @@ def direction_review_page():
 
     page_header(
         "全景文献调研与研究方向决策",
-        "不是只找几篇论文，而是扫描整个KDP/DKDP相关文献池，形成领域版图、科学问题、研究空白、候选课题和6–12个月研究路线。",
+        "不是只找几篇论文，而是扫描KDP主研究文献池，形成领域版图、科学问题、研究空白、候选课题和6–12个月研究路线。",
         "RESEARCH DIRECTION REVIEW",
     )
 
-    rel = df[df["V5相关池"] == "KDP/DKDP相关池"]
+    rel = material_scope(df, "KDP主线")
     stats = _topic_snapshot(df)
     max_year = int(rel["年份"].max()) if len(rel) else 0
 
@@ -685,9 +686,9 @@ def direction_review_page():
                 "accent": COLORS["primary"],
             },
             {
-                "label": "KDP/DKDP相关池",
+                "label": "KDP主研究池",
                 "value": f"{len(rel):,}",
-                "note": "全景扫描对象",
+                "note": "默认全景扫描对象",
                 "accent": COLORS["cyan"],
             },
             {
@@ -822,7 +823,7 @@ def direction_review_page():
         st.download_button(
             "导出代表证据包 Excel",
             excel_bytes(pack[show_cols], "方向决策证据包"),
-            "KDP_DKDP_研究方向决策证据包.xlsx",
+            "KDP_研究方向决策证据包.xlsx",
         )
 
         soft_note(
@@ -838,7 +839,7 @@ def direction_review_page():
             height=100,
             placeholder=(
                 "可以留空让系统从全景中判断。也可以写："
-                "希望围绕KDP/DKDP水溶液生长后的开裂问题，重点关注降温、籽晶、包裹体、位错和理论计算。"
+                "希望围绕KDP水溶液生长后的开裂问题，重点关注降温、籽晶、包裹体、位错和理论计算。"
             ),
         )
 
@@ -885,7 +886,7 @@ def direction_review_page():
     button_label = (
         "快速测试：生成精简方向决策报告"
         if run_mode == "快速测试"
-        else "生成《KDP/DKDP研究方向决策型文献调研报告》"
+        else "生成《KDP研究方向决策型文献调研报告》"
     )
 
     if not st.button(button_label, type="primary"):
@@ -969,16 +970,16 @@ def direction_review_page():
     st.download_button(
         "导出方向决策报告 Word",
         docx_bytes(
-            "KDP_DKDP_研究方向决策型文献调研报告",
+            "KDP_研究方向决策型文献调研报告",
             answer,
             local_sources,
         ),
-        "KDP_DKDP_研究方向决策型文献调研报告.docx",
+        "KDP_研究方向决策型文献调研报告.docx",
     )
 
     if evidence_pack is not None and len(evidence_pack):
         st.download_button(
             "导出本次证据包 Excel",
             excel_bytes(evidence_pack, "方向决策证据包"),
-            "KDP_DKDP_方向决策证据包.xlsx",
+            "KDP_方向决策证据包.xlsx",
         )

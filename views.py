@@ -12,7 +12,7 @@ import streamlit as st
 
 from agent import api_status, run_agent, stream_agent
 from diagnosis import VARIABLES, diagnose, experiment_matrix
-from engine import TOPICS, load_data, offline_summary, search_papers, topic_search, topic_stats
+from engine import CORE_TOPICS, TOPICS, load_data, material_scope, offline_summary, search_papers, topic_search, topic_stats
 from reports import docx_bytes, excel_bytes
 from security import safe_error
 from usage_monitor import render_deepseek_usage
@@ -55,16 +55,16 @@ def dashboard():
         "RESEARCH COMMAND CENTER",
     )
 
-    rel = int((df["V5相关池"] == "KDP/DKDP相关池").sum())
-    tiers = _tier_counts(df)
-    related = df[df["V5相关池"] == "KDP/DKDP相关池"]
+    related = material_scope(df, "KDP主线")
+    rel = len(related)
+    tiers = _tier_counts(related)
     max_year = int(related["年份"].max()) if len(related) else 0
     recent_n = int((related["年份"] >= max_year - 4).sum()) if max_year else 0
 
     metric_cards(
         [
             {"label": "全库去重文献", "value": f"{len(df):,}", "note": "完整数据库", "accent": COLORS["primary"]},
-            {"label": "KDP / DKDP 相关池", "value": f"{rel:,}", "note": "主研究证据池", "accent": COLORS["cyan"]},
+            {"label": "KDP 主研究池", "value": f"{rel:,}", "note": "默认研究证据范围", "accent": COLORS["cyan"]},
             {"label": "S 核心", "value": tiers["S"], "note": "最高优先级", "accent": COLORS["violet"]},
             {"label": "A 重点", "value": tiers["A"], "note": "重点精读层", "accent": COLORS["orange"]},
             {"label": "B 扩展", "value": tiers["B"], "note": "主题扩展层", "accent": COLORS["teal"]},
@@ -220,7 +220,7 @@ def dashboard():
 
     section_title("核心证据库", "S 核心 50：用于开题、机制论证和关键路线设计的优先文献")
     top = (
-        df[df["V5推荐等级"] == "S 核心 50"]
+        related[related["V5推荐等级"] == "S 核心 50"]
         .sort_values("V5科研优先分", ascending=False)
     )
     show_cols = [
@@ -251,7 +251,7 @@ def literature():
 
     with st.container(border=True):
         c1, c2, c3 = st.columns([1, 1, 1.15])
-        scope = c1.selectbox("证据范围", ["全库", "相关池", "S+A"], index=1)
+        scope = c1.selectbox("证据范围", ["KDP主线", "S+A", "相关扩展", "全库"], index=0)
         limit = c2.selectbox("显示上限", [50, 100, 200, 500, 1000], index=2)
         tiers = c3.multiselect(
             "推荐等级",
@@ -298,7 +298,7 @@ def literature():
     st.download_button(
         "导出当前结果为 Excel",
         excel_bytes(result[cols], "文献检索"),
-        "KDP_DKDP_文献检索.xlsx",
+        "KDP_文献检索.xlsx",
     )
 
 
@@ -647,11 +647,11 @@ def _orbital_graph(chain: pd.DataFrame, top_n=34):
         go.Scatter3d(
             x=[0], y=[0], z=[0],
             mode="markers+text",
-            text=["KDP / DKDP"],
+            text=["KDP"],
             textposition="top center",
             marker=dict(size=34, color="#F5A55B", line=dict(color="white", width=1.4)),
             textfont=dict(color="#F3F7FB", size=13),
-            hovertext=["KDP/DKDP 开裂与缺陷研究中心"],
+            hovertext=["KDP 晶体缺陷与开裂研究中心"],
             hoverinfo="text",
             name="研究中心",
         )
@@ -700,7 +700,7 @@ def knowledge_graph():
     if scope == "全库":
         work = df.copy()
     elif scope == "相关池":
-        work = df[df["V5相关池"] == "KDP/DKDP相关池"].copy()
+        work = material_scope(df, "KDP主线")
     else:
         work = df[df["V5推荐等级"].isin(["S 核心 50", "A 重点 150"])].copy()
 
@@ -909,7 +909,7 @@ def compare():
 
     with st.container(border=True):
         q = st.text_input("检索候选论文", placeholder="输入关键词后缩小候选集")
-        cand = search_papers(df, q, 60, "相关池") if q else search_papers(df, "", 60, "S+A")
+        cand = search_papers(df, q, 60, "KDP主线") if q else search_papers(df, "", 60, "S+A")
         mapping = {f"{r['题名']}｜{r['年份']}": i for i, r in cand.iterrows()}
         selected = st.multiselect("选择 2–6 篇", list(mapping), max_selections=6)
 
@@ -1008,7 +1008,7 @@ def crack_diagnosis():
         df,
         phenomenon + " crack thermal stress inclusion dislocation supersaturation",
         15,
-        "相关池",
+        "KDP主线",
     )
     section_title("关联文献证据", "诊断建议应与直接或间接文献证据对应")
     evidence_table(evidence, height=400)
@@ -1022,7 +1022,7 @@ def crack_diagnosis():
         try:
             with st.status("DeepSeek 正在综合变量与证据…", expanded=False):
                 answer, sources = run_agent(
-                    phenomenon or "诊断 KDP/DKDP 开裂原因",
+                    phenomenon or "诊断 KDP 晶体开裂原因",
                     evidence,
                     "实验诊断",
                     extra,
@@ -1070,7 +1070,7 @@ def experiment_design():
     st.download_button(
         "导出实验矩阵 Excel",
         excel_bytes(matrix, "对照实验"),
-        "KDP_DKDP_对照实验设计.xlsx",
+        "KDP_对照实验设计.xlsx",
     )
 
 
@@ -1090,7 +1090,7 @@ def theory():
             [
                 "氢空位", "钾空位", "氧/磷酸根缺陷", "杂质/掺杂", "缺陷复合体",
                 "包裹体附近应力", "加工亚表面损伤", "裂纹萌生", "热应力场",
-                "籽晶/固定约束", "DKDP同位素效应",
+                "籽晶/固定约束", "同位素对照（扩展）",
             ],
         )
         software = c3.multiselect(
@@ -1122,8 +1122,8 @@ def theory():
     section_title("推荐工作流", "根据计算类型自动给出主干路线")
     mini_cards(skeletons[method])
 
-    evidence = search_papers(df, f"{method} {target} {goal}", 18, "相关池")
-    section_title("方法证据", "优先参考已有 KDP/DKDP 理论工作，避免模型与参数脱离体系")
+    evidence = search_papers(df, f"{method} {target} {goal}", 18, "KDP主线")
+    section_title("方法证据", "优先参考 KDP 直接理论工作；同位素材料仅在明确对照问题中作为扩展证据")
     evidence_table(evidence, height=390)
 
     if st.button("生成完整计算方案", type="primary"):
@@ -1189,8 +1189,8 @@ def gaps():
     section_title("专题统计", "研究空白仍需回到具体论文、实验条件和方法缺口中确认")
     st.dataframe(stats, width="stretch", height=380, hide_index=True)
 
-    topic = st.selectbox("深入分析专题", list(TOPICS))
-    evidence = topic_search(df, topic, 25, "相关池")
+    topic = st.selectbox("深入分析专题", list(CORE_TOPICS))
+    evidence = topic_search(df, topic, 25, "KDP主线")
 
     if st.button("识别可验证研究空白", type="primary"):
         ok, _ = api_status()
@@ -1226,7 +1226,7 @@ def ai_agent():
             "任务",
             ["自动判断", "文献问答", "多文献比较", "专题调研", "研究空白", "实验诊断", "理论方案", "报告生成"],
         )
-        scope = c2.selectbox("本地证据范围", ["相关池", "S+A", "全库"])
+        scope = c2.selectbox("本地证据范围", ["KDP主线", "S+A", "相关扩展", "全库"])
         n = c3.slider("本地证据文献数", 6, 20, 12)
         question = st.text_area(
             "科研问题",
@@ -1325,10 +1325,10 @@ def reports():
     with st.container(border=True):
         kind = st.radio("报告类型", templates, horizontal=True)
         c1, c2 = st.columns([1, 1.5])
-        topic = c1.selectbox("主题", list(TOPICS))
+        topic = c1.selectbox("主题", list(CORE_TOPICS))
         extra = c2.text_area("额外要求", height=92, placeholder="例如：突出开裂机理与后续两周实验计划。")
 
-    evidence = topic_search(df, topic, 20, "相关池")
+    evidence = topic_search(df, topic, 20, "KDP主线")
     section_title("报告证据集", "报告会优先引用以下相关文献")
     evidence_table(evidence, height=340)
 
@@ -1369,14 +1369,14 @@ def audit():
     )
 
     total = len(df)
-    rel = int((df["V5相关池"] == "KDP/DKDP相关池").sum())
+    rel = len(material_scope(df, "KDP主线"))
     no_abs = int((df["摘要"].str.strip() == "").sum())
     no_doi = int((df["DOI"].str.strip() == "").sum())
 
     metric_cards(
         [
             {"label": "当前加载记录", "value": f"{total:,}", "note": "完整去重库", "accent": COLORS["primary"]},
-            {"label": "相关池", "value": f"{rel:,}", "note": "KDP / DKDP 主库", "accent": COLORS["cyan"]},
+            {"label": "KDP主研究池", "value": f"{rel:,}", "note": "默认研究范围", "accent": COLORS["cyan"]},
             {"label": "无摘要", "value": no_abs, "note": f"{no_abs/max(total,1)*100:.1f}% 缺失", "accent": COLORS["orange"]},
             {"label": "无 DOI", "value": no_doi, "note": f"{no_doi/max(total,1)*100:.1f}% 缺失", "accent": COLORS["red"]},
         ]
