@@ -388,12 +388,14 @@ def _relationship_matrix(chain: pd.DataFrame, top_n=28):
             zmin=0,
             showscale=True,
             colorbar=dict(
-                title="文献数",
+                title=dict(
+                    text="文献数",
+                    font=dict(color="#AFC0D5"),
+                ),
                 thickness=10,
                 len=.70,
                 x=1.02,
                 tickfont=dict(color="#AFC0D5"),
-                titlefont=dict(color="#AFC0D5"),
             ),
             text=np.where(
                 mo_pivot.values > 0,
