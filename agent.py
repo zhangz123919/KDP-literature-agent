@@ -59,6 +59,29 @@ def run_agent(q,df,task="文献问答",extra=""):
 但必须标记为跨文献推断。
 """
     client=OpenAI(api_key=_get("DEEPSEEK_API_KEY"),base_url="https://api.deepseek.com")
-    prompt=f"任务:{task}\n问题:{q}\n额外条件:{extra}\n文献证据:\n{ctx}\n请给直接结论、证据链、共识/分歧、证据不足和下一步建议。引用用[P1][P2]。"
+        prompt = f"""
+任务：{task}
+
+问题：
+{q}
+
+额外条件：
+{extra}
+
+{quality_note}
+
+文献证据：
+{ctx}
+
+回答必须分成：
+
+1. 直接结论
+2. 文献直接证据
+3. 跨文献推断
+4. 当前证据不足
+5. 建议实验/计算验证
+
+引用文献必须使用[P1][P2]编号。
+"""
     r=client.chat.completions.create(model=model,messages=[{"role":"system","content":SYSTEM},{"role":"user","content":prompt}],temperature=0.15)
     return r.choices[0].message.content,src
