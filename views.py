@@ -60,7 +60,7 @@ def dashboard():
     df = _df()
     page_header(
         "科研驾驶舱",
-        "把文献、缺陷机制、实验变量与计算路线压缩到同一个研究视野中。",
+        "汇总KDP主研究证据、专题活跃度、核心文献与当前研究状态，为进一步调研和决策提供快速入口。",
         "RESEARCH COMMAND CENTER",
     )
 
@@ -805,40 +805,46 @@ def knowledge_graph():
     df = _df()
     page_header(
         "知识图谱",
-        "把数千篇文献压缩成可旋转、可追踪的“来源—机制—后果”研究网络，而不是堆叠默认图表。",
+        "将KDP文献中的缺陷来源、局部机制与宏观后果组织为可追踪的研究关系网络。",
         "KNOWLEDGE GRAPH",
     )
     project_context_strip()
 
     with st.container(border=True):
         c1, c2, c3 = st.columns([1, 1.05, 1.1])
-        scope = c1.radio("范围", ["相关池", "S+A", "全库"], horizontal=True)
+        scope = c1.radio("范围", ["KDP主线", "S+A", "全库"], horizontal=True)
         hide_uncertain = c2.toggle("仅显示明确证据关系", value=True)
         core_raw_only = c3.toggle("统计仅看开裂 / 缺陷核心", value=True)
 
     if scope == "全库":
-        work = df.copy()
-    elif scope == "相关池":
+        work = df
+    elif scope == "KDP主线":
         work = material_scope(df, "KDP主线")
     else:
-        work = df[df["V5推荐等级"].isin(["S 核心 50", "A 重点 150"])].copy()
+        work = material_scope(df, "KDP主线")
+        work = work[work["V5推荐等级"].isin(["S 核心 50", "A 重点 150"])]
 
     original_n = len(work)
+
     if hide_uncertain:
         work = work[
             ~work["缺陷/应力来源"].isin(KG_UNCERTAIN)
             & ~work["作用机制"].isin(KG_UNCERTAIN)
             & ~work["宏观结果"].isin(KG_UNCERTAIN)
-        ].copy()
+        ]
 
     chain = (
-        work.groupby(["缺陷/应力来源", "作用机制", "宏观结果"], as_index=False)
+        work.groupby(
+            ["缺陷/应力来源", "作用机制", "宏观结果"],
+            as_index=False,
+            observed=True,
+        )
         .size()
         .rename(columns={"size": "文献数"})
     )
 
     if chain.empty:
-        st.warning("当前筛选条件下没有可用于构建知识图谱的关系。")
+        st.warning("当前筛选条件下没有可用于构建知识图谱的明确关系。")
         return
 
     metric_cards(
@@ -851,9 +857,20 @@ def knowledge_graph():
         ]
     )
 
-    tab1, tab2, tab3 = st.tabs(["研究主线", "3D 关系星图", "分类与关系"])
+    # IMPORTANT:
+    # st.tabs executes every tab body on every rerun. The 3D graph therefore
+    # used to render even when invisible, causing expensive WebGL work and
+    # making page/module switching appear frozen.
+    section = st.segmented_control(
+        "图谱视图",
+        ["研究主线", "3D关系星图", "分类与关系"],
+        default="研究主线",
+        selection_mode="single",
+        label_visibility="collapsed",
+        key="kg_view_mode",
+    )
 
-    with tab1:
+    if section == "研究主线":
         c1, c2 = st.columns([1, 1.25])
         with c1:
             top_n = st.slider(
@@ -861,12 +878,12 @@ def knowledge_graph():
                 10,
                 min(40, len(chain)),
                 min(26, len(chain)),
+                key="kg_matrix_topn",
             )
         with c2:
             soft_note(
-                "研究主线已从桑基图改成“双矩阵路径图”："
-                "左边看来源如何进入机制，右边看机制如何走向后果。"
-                "颜色越亮、数字越大，说明文献证据越厚。"
+                "左侧观察缺陷/应力来源如何进入局部机制，右侧观察机制如何对应宏观后果；"
+                "颜色和数字表示当前文献库中的关系证据规模。"
             )
 
         fig = _relationship_matrix(chain, top_n=top_n)
@@ -876,86 +893,118 @@ def knowledge_graph():
             theme=None,
             height=610,
             config={"displaylogo": False},
+            key="kg_relationship_matrix",
         )
 
         section_title(
-            "最强研究路径",
-            "把双矩阵中的高强度关系重新组合成完整的来源—机制—后果路径",
+            "高证据研究路径",
+            "按当前文献库中的关系数量排序，作为进一步回查原文和机制分析的入口",
         )
-
-        strongest = (
-            chain.sort_values("文献数", ascending=False)
-            .head(12)
-            .copy()
-        )
-
+        strongest = chain.sort_values("文献数", ascending=False).head(12)
         mini_cards(
             [
                 (
                     f"{r['缺陷/应力来源']}  →  {r['作用机制']}  →  {r['宏观结果']}",
-                    f"当前文献库关联证据：{int(r['文献数'])} 篇",
+                    f"当前关系文献：{int(r['文献数'])} 篇",
                 )
                 for _, r in strongest.iterrows()
             ]
         )
+        return
 
-    with tab2:
+    if section == "3D关系星图":
         left, right = st.columns([1, 1.2])
         with left:
-            relation_limit = st.slider("星图保留关系数", 12, min(50, len(chain)), min(32, len(chain)))
+            relation_limit = st.slider(
+                "星图保留关系数",
+                12,
+                min(50, len(chain)),
+                min(28, len(chain)),
+                key="kg_3d_limit",
+            )
         with right:
-            soft_note("深色星图采用三层轨道：来源 → 机制 → 后果。节点标签默认隐藏，悬停查看，避免文字互相遮挡。")
-        fig = _orbital_graph(chain, top_n=relation_limit)
+            soft_note(
+                "3D视图按需加载，不再随知识图谱页面自动生成。"
+                "来源、机制和后果分布在三层轨道中，悬停查看节点信息。"
+            )
+
+        # Explicit load gate: moving between modules no longer pays the WebGL cost.
+        sig = f"{scope}|{hide_uncertain}|{relation_limit}|{int(chain['文献数'].sum())}|{len(chain)}"
+        if st.session_state.get("_kg_3d_loaded_sig") != sig:
+            st.info("3D星图属于高负载交互视图。点击后才生成，普通模块切换不会再自动加载它。")
+            if not st.button("加载3D关系星图", type="primary", key="kg_load_3d"):
+                return
+            st.session_state["_kg_3d_loaded_sig"] = sig
+
+        with st.spinner("正在生成3D关系星图…"):
+            fig = _orbital_graph(chain, top_n=relation_limit)
+
         st.plotly_chart(
             fig,
             width="stretch",
             theme=None,
-            height=780,
+            height=760,
             config={"displaylogo": False, "scrollZoom": True},
+            key=f"kg_3d_{relation_limit}",
         )
+        return
 
-    with tab3:
-        left, right = st.columns([1.08, 1], gap="large")
-        with left:
-            section_title("核心详细分类", "保留与你当前开裂与缺陷方向直接相关的二级分类")
-            raw = work["详细二级分类"].fillna("").replace("", "未命中详细分类")
-            raw_counts = raw.value_counts().rename_axis("原始详细分类").reset_index(name="文献数")
-            if core_raw_only:
-                pattern = "|".join(re.escape(k) for k in KG_CORE_RAW_KEYWORDS)
-                raw_counts = raw_counts[
-                    raw_counts["原始详细分类"].str.contains(pattern, case=False, regex=True)
-                ].copy()
-            raw_counts = raw_counts.head(28)
-            if len(raw_counts):
-                bar_df = raw_counts.sort_values("文献数")
-                fig = px.bar(
-                    bar_df,
-                    x="文献数",
-                    y="原始详细分类",
-                    orientation="h",
-                    color="文献数",
-                    color_continuous_scale=["#DDE5F0", "#8B84E8", "#20AFC0"],
+    # 分类与关系
+    left, right = st.columns([1.08, 1], gap="large")
+    with left:
+        section_title("核心详细分类", "聚焦KDP缺陷、开裂及其相关方法的二级分类结构")
+        raw = work["详细二级分类"].fillna("").replace("", "未命中详细分类")
+        raw_counts = raw.value_counts().rename_axis("原始详细分类").reset_index(name="文献数")
+
+        if core_raw_only:
+            pattern = "|".join(re.escape(k) for k in KG_CORE_RAW_KEYWORDS)
+            raw_counts = raw_counts[
+                raw_counts["原始详细分类"].str.contains(
+                    pattern,
+                    case=False,
+                    regex=True,
                 )
-                fig.update_layout(coloraxis_showscale=False, yaxis_title="", xaxis_title="文献数")
-                fig.update_traces(marker_line_width=0)
-                plotly(fig, height=700, key="kg_categories")
-            else:
-                st.info("当前条件下没有命中的核心详细分类。")
+            ]
 
-        with right:
-            section_title("关系强度", "优先看文献证据较厚的研究链")
-            rel = chain.copy()
-            rel["研究链路"] = (
-                rel["缺陷/应力来源"] + " → " + rel["作用机制"] + " → " + rel["宏观结果"]
-            )
-            rel = rel.sort_values("文献数", ascending=False).head(30)
-            st.dataframe(
-                rel[["研究链路", "文献数"]],
-                width="stretch",
-                height=700,
-                hide_index=True,
-            )
+        raw_counts = raw_counts.head(28)
 
+        if len(raw_counts):
+            bar_df = raw_counts.sort_values("文献数")
+            fig = px.bar(
+                bar_df,
+                x="文献数",
+                y="原始详细分类",
+                orientation="h",
+                color="文献数",
+                color_continuous_scale=["#DDE5F0", "#8B84E8", "#20AFC0"],
+            )
+            fig.update_layout(
+                coloraxis_showscale=False,
+                yaxis_title="",
+                xaxis_title="文献数",
+            )
+            fig.update_traces(marker_line_width=0)
+            plotly(fig, height=700, key="kg_categories")
+        else:
+            st.info("当前条件下没有命中的核心详细分类。")
+
+    with right:
+        section_title("关系强度", "优先回查关系证据较厚的研究链")
+        rel = chain.copy()
+        rel["研究链路"] = (
+            rel["缺陷/应力来源"]
+            + " → "
+            + rel["作用机制"]
+            + " → "
+            + rel["宏观结果"]
+        )
+        rel = rel.sort_values("文献数", ascending=False).head(30)
+        st.dataframe(
+            rel[["研究链路", "文献数"]],
+            width="stretch",
+            height=700,
+            hide_index=True,
+        )
 
 def topic_review():
     df = _df()

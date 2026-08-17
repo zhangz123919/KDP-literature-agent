@@ -6,6 +6,7 @@ from ui import apply_theme, sidebar_ai_status, sidebar_brand
 from security import safe_page, sidebar_security
 from direction_review import direction_review_page
 from experiment_lab import experiment_lab_page
+from home_page import home_page
 from experiment_vault import sidebar_vault_status
 from project_workspace import project_workspace_page
 from research_memory import sidebar_project_switcher
@@ -38,10 +39,16 @@ sidebar_project_switcher()
 pages = {
     "总览": [
         st.Page(
+            safe_page(home_page),
+            title="首页",
+            icon=":material/home:",
+            default=True,
+            url_path="home",
+        ),
+        st.Page(
             safe_page(dashboard),
             title="科研驾驶舱",
             icon=":material/dashboard:",
-            default=True,
             url_path="overview",
         ),
         st.Page(
