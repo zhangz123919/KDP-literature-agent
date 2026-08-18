@@ -626,6 +626,38 @@ def _common_direction_context(
 """
 
 
+
+def _segment_required_sections(seg_id: str) -> list[str]:
+    """正式报告每段必须出现的章节号；用于防止流式连接提前结束却被误判为完成。"""
+    return {
+        "A": ["0", "1", "2", "3"],
+        "B": ["4", "5", "6"],
+        "C": ["7", "8", "9"],
+        "D": ["10", "11", "12"],
+    }.get(seg_id, [])
+
+
+def _segment_is_complete(seg_id: str, text: str) -> bool:
+    """不仅看 finish_reason，还检查本段要求的章节是否真的都生成出来。"""
+    if not text or not text.strip():
+        return False
+    for no in _segment_required_sections(seg_id):
+        # 接受 '# 0.' / '## 0 ' / '0. 标题' / '0、标题' 等常见Markdown写法。
+        pat = rf"(?m)^\\s*(?:#{{1,4}}\\s*)?{re.escape(no)}(?:\\.|、|：|:|\\s)"
+        if not re.search(pat, text):
+            return False
+    return True
+
+
+def _missing_segment_sections(seg_id: str, text: str) -> list[str]:
+    missing = []
+    for no in _segment_required_sections(seg_id):
+        pat = rf"(?m)^\\s*(?:#{{1,4}}\\s*)?{re.escape(no)}(?:\\.|、|：|:|\\s)"
+        if not re.search(pat, text or ""):
+            missing.append(no)
+    return missing
+
+
 def stream_direction_report(
     df: pd.DataFrame,
     focus: str,
@@ -697,7 +729,9 @@ def stream_direction_report(
         thinking_enabled = False
     else:
         model = _secret("DEEPSEEK_MODEL", "deepseek-v4-pro")
-        thinking_enabled = True
+        # 正式长报告以“完整、稳定输出”为优先。证据扫描与选题结构已经由程序完成，
+        # 这里关闭深度思考，避免 reasoning_content 占用大量输出预算并提高长流中断概率。
+        thinking_enabled = False
 
     # 比旧版90秒更宽裕；仍可在Secrets里覆盖。
     timeout_value = _secret("DIRECTION_API_TIMEOUT", 180)
@@ -773,10 +807,10 @@ def stream_direction_report(
     else:
         skip_segments = set(skip_segments or set())
         try:
-            segment_max = int(_secret("DIRECTION_SEGMENT_MAX_TOKENS", 4600))
-            segment_max = min(max(segment_max, 3200), 6500)
+            segment_max = int(_secret("DIRECTION_SEGMENT_MAX_TOKENS", 7600))
+            segment_max = min(max(segment_max, 5200), 12000)
         except Exception:
-            segment_max = 4600
+            segment_max = 7600
 
         for seg_id, seg_title, seg_instruction in _formal_report_segments():
             if seg_id in skip_segments:
@@ -808,8 +842,9 @@ def stream_direction_report(
                         {
                             "role": "user",
                             "content": (
-                                "上一轮在本段中途结束。请从最后一句之后继续完成本段剩余内容。"
-                                "不要重复已经写过的标题、表格或段落；只续写未完成部分。"
+                                "上一轮在本段中途结束。请严格从最后一句之后继续，只补齐尚未完成的章节。"
+                                f"本段完整时必须包含章节：{', '.join(_segment_required_sections(seg_id))}。"
+                                "不要重写已经出现的章节标题、表格或段落；不要从本段开头重新开始。"
                             ),
                         },
                     ]
@@ -833,24 +868,24 @@ def stream_direction_report(
                 error = result.get("error")
 
                 if error is not None:
-                    if segment_text.strip() and continuation_count < 2:
+                    if segment_text.strip() and continuation_count < 4:
                         continuation_count += 1
                         yield {
                             "type": "warning",
                             "text": (
                                 f"第{seg_id}段流式连接在已生成部分内容后中断，"
-                                f"正在自动从中断处续写（{continuation_count}/2）…"
+                                f"正在自动从中断处续写（{continuation_count}/4）…"
                             ),
                         }
                         continue
 
-                    if not segment_text.strip() and transport_retry_count < 2:
+                    if not segment_text.strip() and transport_retry_count < 3:
                         transport_retry_count += 1
                         yield {
                             "type": "warning",
                             "text": (
                                 f"第{seg_id}段连接未开始输出，正在自动重试"
-                                f"（{transport_retry_count}/2）…"
+                                f"（{transport_retry_count}/3）…"
                             ),
                         }
                         continue
@@ -867,14 +902,30 @@ def stream_direction_report(
                     }
                     return
 
-                if finish_reason == "length":
-                    if continuation_count < 2:
+                # 不能再把 finish_reason=None 直接当“正常完成”。
+                # 流式连接若提前断开，SDK有时可能只留下部分正文；必须同时做章节完整性校验。
+                complete_now = _segment_is_complete(seg_id, segment_text)
+                missing_sections = _missing_segment_sections(seg_id, segment_text)
+
+                if finish_reason == "stop" and complete_now:
+                    segment_finish_reasons[seg_id] = "stop"
+                    segment_ok = True
+                    break
+
+                if finish_reason in ("length", None, "insufficient_system_resource") or not complete_now:
+                    if continuation_count < 4:
                         continuation_count += 1
+                        reason_text = {
+                            "length": "达到单次输出上限",
+                            None: "流提前结束且未收到完整结束标志",
+                            "insufficient_system_resource": "服务端推理资源临时不足",
+                        }.get(finish_reason, "本段章节尚未完整")
+                        miss = "、".join(missing_sections) if missing_sections else "正文尾部"
                         yield {
                             "type": "warning",
                             "text": (
-                                f"第{seg_id}段达到单段输出上限，"
-                                f"正在自动续写（{continuation_count}/2）…"
+                                f"第{seg_id}段{reason_text}，当前仍缺少章节 {miss}；"
+                                f"正在自动续写（{continuation_count}/4），无需手动重新点击。"
                             ),
                         }
                         continue
@@ -882,8 +933,9 @@ def stream_direction_report(
                     yield {
                         "type": "failed",
                         "text": (
-                            f"第{seg_id}段连续续写后仍达到输出上限。"
-                            "已完成段落已保留；建议稍后继续，而不是整篇重跑。"
+                            f"第{seg_id}段自动续写多次后仍不完整（缺少："
+                            f"{'、'.join(missing_sections) if missing_sections else '正文尾部'}）。"
+                            "前面完整段落已保留，可稍后从本段继续。"
                         ),
                         "segment": seg_id,
                         "model": model,
@@ -891,23 +943,18 @@ def stream_direction_report(
                     }
                     return
 
-                if finish_reason not in (None, "stop"):
+                if finish_reason not in ("stop",):
                     yield {
                         "type": "failed",
                         "text": (
-                            f"第{seg_id}段以非正常结束状态 {finish_reason} 停止。"
-                            "已完成段落已保留，可稍后继续生成。"
+                            f"第{seg_id}段以状态 {finish_reason} 停止，且未通过完整性校验。"
+                            "已完成段落已保留。"
                         ),
                         "segment": seg_id,
                         "model": model,
                         "usage": total_usage,
                     }
                     return
-
-                # DeepSeek正常stop，或服务端未返回finish_reason但流已经正常结束。
-                segment_finish_reasons[seg_id] = finish_reason or "stream_end"
-                segment_ok = True
-                break
 
             if segment_ok:
                 yield {
@@ -1179,8 +1226,8 @@ def direction_review_page():
             horizontal=True,
             index=1,
             help=(
-                "正式报告已改为4段生成并自动续写，不再一次性生成超长正文；"
-                "即使某一段网络中断，前面完成的段落也会保留。"
+                "点击一次后会自动连续完成A—D全部内容；程序会在后台分段以提高稳定性，"
+                "但不需要你逐段点击。只有多次自动重试仍失败时才会出现恢复入口。"
             ),
         )
 
@@ -1213,9 +1260,19 @@ def direction_review_page():
     button_label = (
         "快速测试：生成精简方向报告"
         if run_mode == "快速测试"
-        else "生成《大尺寸KDP晶体缺陷研究方向决策报告》"
+        else "一键生成完整《大尺寸KDP晶体缺陷研究方向决策报告》"
     )
-    do_new = st.button(button_label, type="primary", key="new_direction_report")
+
+    # 有未完成正式报告时，不再同时显示“重新生成”大按钮，避免用户误点后清空恢复点、从A段重跑。
+    if saved_incomplete and run_mode == "正式报告":
+        do_new = False
+        with st.expander("需要放弃旧报告并从头生成？", expanded=False):
+            st.caption("只有当你确实想换研究问题/约束条件时才使用。")
+            if st.button("清除未完成报告", key="clear_direction_report"):
+                st.session_state.pop("_direction_report_resume", None)
+                st.rerun()
+    else:
+        do_new = st.button(button_label, type="primary", key="new_direction_report")
 
     if not do_new and not do_resume:
         return
