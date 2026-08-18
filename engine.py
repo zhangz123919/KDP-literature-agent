@@ -13,7 +13,7 @@ DATA_PATH = ROOT / "data" / "KDP_全自动详细文献调研.xlsx"
 TOPICS = {
     "大尺寸/尺度效应": ["large size","large-sized","large scale","large-scale","large aperture","scale effect","size effect","crystal size","尺度效应","尺寸效应","大尺寸","大口径","晶体尺寸"],
     "流场/传质/表面过饱和度": ["hydrodynamics","flow field","mass transfer","solute transport","boundary layer","surface supersaturation","supersaturation distribution","vortex","流场","流体动力学","传质","溶质输运","边界层","表面过饱和度","局部过饱和度","涡流"],
-    "白纹/生长条纹": ["growth striation","growth striations","striations","growth band","growth bands","white striation","white stripe","白纹","生长条纹","生长带","条带"],
+    "白纹/生长条纹": ["growth striation","growth striations","striations","growth band","growth bands","white striation","white stripe","phase jump","phase discontinuity","wavefront phase discontinuity","白纹","生长条纹","生长带","条带","相位跃变","位相跃变","相位突变"],
     "串丝/发丝状包裹体": ["hair inclusion","hair inclusions","hair-like inclusion","hairlike inclusion","chain inclusion","串丝","发丝状包裹体","发丝包裹体","链状包裹体"],
     "晶体开裂": ["crack","cracking","fracture","microcrack","thermal stress","residual stress","开裂","裂纹","热应力","残余应力"],
     "氢空位/质子缺失": ["hydrogen vacancy","proton vacancy","h vacancy","hydrogen defect","氢空位","质子空位","质子缺失"],
@@ -44,9 +44,9 @@ INTENT_RULES = {
         "boost": ["hydrodynamics","flow field","mass transfer","surface supersaturation","boundary layer","vortex","growth interface","defect","流场","传质","表面过饱和度","边界层","涡流","生长界面","缺陷"],
     },
     "白纹": {
-        "triggers": ["白纹","生长条纹","growth striation","growth band","white striation"],
-        "must": ["growth striation","growth striations","striations","growth band","growth bands","white striation","白纹","生长条纹","生长带"],
-        "boost": ["supersaturation","growth interface","step bunching","growth sector","mass transfer","optical inhomogeneity","scattering","过饱和度","生长界面","台阶聚集","生长扇区","传质","光学不均匀","散射"],
+        "triggers": ["白纹","生长条纹","相位跃变","位相跃变","growth striation","growth band","white striation","phase jump","phase discontinuity"],
+        "must": ["growth striation","growth striations","striations","growth band","growth bands","white striation","phase jump","phase discontinuity","白纹","生长条纹","生长带","相位跃变","位相跃变","相位突变"],
+        "boost": ["supersaturation","growth interface","step bunching","growth sector","mass transfer","optical inhomogeneity","wavefront","refractive index","scattering","过饱和度","生长界面","台阶聚集","生长扇区","传质","光学不均匀","波前","折射率","散射"],
     },
     "串丝": {
         "triggers": ["串丝","发丝状包裹体","发丝包裹体","hair inclusion","hair-like inclusion"],
