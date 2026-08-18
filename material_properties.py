@@ -114,6 +114,13 @@ def _template():
     st.warning("真实未公开实验值仍建议存入受保护的‘实验记录与数据积累’模块；这里主要负责测试规划和参数结构。")
 
 
+def _testing_library_link():
+    page = (st.session_state.get("_kdp_nav_pages") or {}).get("testing")
+    if page is not None:
+        st.info("如果你现在不是只想测热-力参数，而是想知道白纹、串丝、包裹体、位错、杂质和光学质量分别该用什么技术，请进入完整测试技术库。")
+        st.page_link(page, label="进入：KDP测试技术与仪器库", icon=":material/manage_search:", width="stretch")
+
+
 def material_properties_page():
     page_header(
         "KDP 物性参数：为什么测、在哪里测、怎么测",
@@ -126,3 +133,5 @@ def material_properties_page():
     with tabs[2]: _orientation()
     with tabs[3]: _plan()
     with tabs[4]: _template()
+    st.divider()
+    _testing_library_link()

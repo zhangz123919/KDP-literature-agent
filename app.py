@@ -10,6 +10,7 @@ from home_page import home_page
 from theory_learning import theory_learning_page
 from scale_effect import scale_effect_page
 from material_properties import material_properties_page
+from testing_techniques import testing_techniques_page
 from experiment_vault import sidebar_vault_status
 from project_workspace import project_workspace_page
 from research_memory import sidebar_project_switcher
@@ -125,6 +126,12 @@ PAGE = {
         icon=":material/database:",
         url_path="experiment-log",
     ),
+    "testing": st.Page(
+        safe_page(testing_techniques_page),
+        title="测试技术与仪器库",
+        icon=":material/manage_search:",
+        url_path="testing-techniques",
+    ),
     "properties": st.Page(
         safe_page(material_properties_page),
         title="物性参数与测试",
@@ -188,6 +195,7 @@ pages = {
         PAGE["diagnosis"],
         PAGE["experiment"],
         PAGE["experiment_log"],
+        PAGE["testing"],
         PAGE["properties"],
         PAGE["theory"],
         PAGE["gaps"],

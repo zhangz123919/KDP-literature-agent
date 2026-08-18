@@ -228,6 +228,7 @@ div[data-testid="stPageLink"] a{min-height:42px;border-radius:7px!important;bord
             ("diagnosis", "缺陷与开裂诊断", ":material/crisis_alert:", "排查尺寸、流场、过饱和度、冷却和缺陷变量"),
             ("experiment", "对照实验设计", ":material/fact_check:", "把尺度效应和缺陷假设转化为可证伪实验"),
             ("experiment_log", "实验记录与数据积累", ":material/database:", "记录白纹、串丝、尺寸阶段和开裂时序"),
+            ("testing", "测试技术与仪器库", ":material/manage_search:", "按白纹、串丝、开裂等问题反推测试技术、仪器、样品与数据"),
         ])
     with row1[3]:
         _entry_group("物性与计算", "从参数和机制验证进入", [
