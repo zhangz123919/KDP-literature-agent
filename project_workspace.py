@@ -61,7 +61,7 @@ def project_workspace_page():
     project = ensure_default_project()
     page_header(
         "研究总控台",
-        "围绕当前KDP研究项目统一组织文献证据、科学假设、实验记录、诊断结果、理论计算与阶段决策，形成可连续推进的研究上下文。",
+        "以大尺寸KDP晶体生长尺度效应为当前主线，统一组织理论基础、文献证据、科学假设、实验记录、缺陷诊断、物性测试、数值计算与阶段决策。",
         "PROJECT RESEARCH HUB",
     )
     project_context_strip(show_security=True)
@@ -72,24 +72,27 @@ def project_workspace_page():
     )
     st.markdown(
         """
-研究总控台负责汇聚项目中的关键研究对象，并持续记录其状态变化。  
-文献证据可进入假设与机制论证，诊断结果可转化为实验方案，实验结果可进一步触发理论验证，
-计算结果和AI分析再回填当前项目，形成可追溯的研究闭环。
+当前平台不再把“开裂”作为孤立终点，而把研究链统一为：  
+**晶体尺寸/生长阶段 → 流场与传质 → 表面过饱和度/界面 → 白纹、串丝、包裹体等缺陷 → 热—力响应 → 开裂与工艺优化。**  
+文献、实验、物性、CFD/FEA 和 AI 分析都围绕这条链共享项目上下文。
 """
     )
 
     flow = pd.DataFrame(
         [
+            ["KDP理论基础学习", "晶体学 / 生长 / 缺陷 / 热力基础", "学习知识骨架", "理解实验与计算语言"],
+            ["大尺寸尺度效应研究", "小—中—大双轨对照 / 相似性", "实验方案", "CFD、缺陷地图、工艺优化"],
             ["文献中心", "核心论文 / 方法依据", "文献证据", "诊断、计算、AI、方向决策"],
-            ["开裂诊断", "风险排序 / 根因假设", "诊断记录", "对照实验、下一步验证"],
+            ["缺陷与开裂诊断", "白纹/串丝/开裂变量排查", "诊断记录", "对照实验、下一步验证"],
             ["对照实验设计", "变量、对照组、判据", "实验方案", "实验研究库"],
-            ["实验记录与数据积累", "真实条件 / 现象 / 失败", "受保护实验索引", "历史比较、未来机器学习"],
-            ["理论计算规划与分析", "模型、任务、结果", "计算任务 / 结果", "AI综合、机制验证"],
+            ["实验记录与数据积累", "尺寸阶段 / 工艺 / 白纹 / 串丝 / 开裂", "受保护实验索引", "历史比较、未来机器学习"],
+            ["物性参数与测试", "热学 / 弹性 / 强度 / 断裂参数", "测试方案", "热—力模型参数库"],
+            ["理论计算规划与分析", "CFD / FEA / DFT / MD", "计算任务 / 结果", "机制验证与实验回填"],
             ["AI科研助手", "综合分析 / 下一步建议", "AI分析", "项目决策与报告"],
         ],
         columns=["研究模块", "核心产出", "项目记忆类型", "后续协同环节"],
     )
-    st.dataframe(flow, width="stretch", hide_index=True, height=286)
+    st.dataframe(flow, width="stretch", hide_index=True, height=410)
 
     with st.expander("项目管理", expanded=False):
         projects = list_projects()
@@ -104,10 +107,10 @@ def project_workspace_page():
             set_active_project(mapping[chosen])
             st.rerun()
 
-        new_name = c2.text_input("新项目名称", placeholder="例如：KDP降温开裂机制")
+        new_name = c2.text_input("新项目名称", placeholder="例如：大尺寸KDP尺度效应与缺陷演化")
         new_question = st.text_input(
             "新项目核心问题",
-            placeholder="例如：为什么KDP晶体在取晶后30–60 min出现裂纹？",
+            placeholder="例如：为什么同样名义工艺下，大尺寸KDP更容易出现白纹、串丝或开裂？",
         )
         if st.button("创建新研究项目"):
             if not new_name.strip():
@@ -165,12 +168,12 @@ def project_workspace_page():
         if len(latest):
             st.dataframe(latest, width="stretch", hide_index=True, height=520)
         else:
-            soft_note("当前项目还没有沉淀记录。建议从“文献中心加入1篇证据 → 建立1条假设 → 生成1个验证实验/计算任务”开始，随后这个页面就会自动汇总整个研究链。")
+            soft_note("当前项目还没有沉淀记录。建议先在‘KDP理论基础学习’建立概念骨架，再从‘大尺寸尺度效应研究’建立双轨方案，随后加入文献证据、实验记录和CFD/FEA任务。")
         return
 
     if section == "科学假设":
         with st.container(border=True):
-            h = st.text_input("新增假设", placeholder="例如：降温过快通过热应力增加裂纹萌生概率")
+            h = st.text_input("新增假设", placeholder="例如：晶体尺寸增大通过改变局部传质与表面过饱和度，提高白纹/串丝出现概率")
             rationale = st.text_area("当前依据 / 为什么值得验证", height=90)
             c1, c2 = st.columns(2)
             priority = c1.selectbox("优先级", ["高", "中", "低"])

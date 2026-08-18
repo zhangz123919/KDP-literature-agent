@@ -11,13 +11,17 @@ ROOT = Path(__file__).resolve().parent
 DATA_PATH = ROOT / "data" / "KDP_全自动详细文献调研.xlsx"
 
 TOPICS = {
+    "大尺寸/尺度效应": ["large size","large-sized","large scale","large-scale","large aperture","scale effect","size effect","crystal size","尺度效应","尺寸效应","大尺寸","大口径","晶体尺寸"],
+    "流场/传质/表面过饱和度": ["hydrodynamics","flow field","mass transfer","solute transport","boundary layer","surface supersaturation","supersaturation distribution","vortex","流场","流体动力学","传质","溶质输运","边界层","表面过饱和度","局部过饱和度","涡流"],
+    "白纹/生长条纹": ["growth striation","growth striations","striations","growth band","growth bands","white striation","white stripe","白纹","生长条纹","生长带","条带"],
+    "串丝/发丝状包裹体": ["hair inclusion","hair inclusions","hair-like inclusion","hairlike inclusion","chain inclusion","串丝","发丝状包裹体","发丝包裹体","链状包裹体"],
     "晶体开裂": ["crack","cracking","fracture","microcrack","thermal stress","residual stress","开裂","裂纹","热应力","残余应力"],
     "氢空位/质子缺失": ["hydrogen vacancy","proton vacancy","h vacancy","hydrogen defect","氢空位","质子空位","质子缺失"],
     "钾/氧/磷酸根点缺陷": ["potassium vacancy","oxygen vacancy","phosphate defect","interstitial","钾空位","氧空位","磷酸根缺陷"],
     "杂质与掺杂": ["impurity","dopant","doping","transition metal","杂质","掺杂","金属离子"],
     "包裹体与散射中心": ["inclusion","solution inclusion","particle inclusion","scattering center","包裹体","夹杂","散射中心"],
-    "位错与晶格应变": ["dislocation","lattice strain","growth striation","位错","晶格应变","生长条纹"],
-    "生长缺陷/快速生长": ["growth defect","rapid growth","fast growth","supersaturation","growth sector","生长缺陷","快速生长","过饱和度"],
+    "位错与晶格应变": ["dislocation","lattice strain","residual strain","位错","晶格应变","残余应变"],
+    "生长缺陷/快速生长": ["growth defect","rapid growth","fast growth","supersaturation","growth sector","growth interface","step bunching","macrostep","生长缺陷","快速生长","过饱和度","生长界面","台阶聚集","宏台阶"],
     "DKDP氘化与同位素": ["dkdp","deuteration","deuterium concentration","isotope effect","氘化","同位素"],
     "表面/亚表面加工损伤": ["subsurface damage","sub-surface damage","surface damage","polishing","grinding","diamond turning","fly cutting","亚表面损伤","表面损伤","抛光","研磨","飞切"],
     "激光损伤/LIDT": ["laser damage","laser-induced damage","lidt","damage threshold","breakdown","激光损伤","损伤阈值"],
@@ -34,6 +38,26 @@ CORE_TOPICS = {
 }
 
 INTENT_RULES = {
+    "尺度效应": {
+        "triggers": ["尺度效应","尺寸效应","大尺寸","大口径","large size","large-scale","large aperture","crystal size"],
+        "must": ["large size","large-sized","large scale","large-scale","large aperture","crystal size","size effect","尺度效应","尺寸效应","大尺寸","大口径","晶体尺寸"],
+        "boost": ["hydrodynamics","flow field","mass transfer","surface supersaturation","boundary layer","vortex","growth interface","defect","流场","传质","表面过饱和度","边界层","涡流","生长界面","缺陷"],
+    },
+    "白纹": {
+        "triggers": ["白纹","生长条纹","growth striation","growth band","white striation"],
+        "must": ["growth striation","growth striations","striations","growth band","growth bands","white striation","白纹","生长条纹","生长带"],
+        "boost": ["supersaturation","growth interface","step bunching","growth sector","mass transfer","optical inhomogeneity","scattering","过饱和度","生长界面","台阶聚集","生长扇区","传质","光学不均匀","散射"],
+    },
+    "串丝": {
+        "triggers": ["串丝","发丝状包裹体","发丝包裹体","hair inclusion","hair-like inclusion"],
+        "must": ["hair inclusion","hair inclusions","hair-like inclusion","hairlike inclusion","chain inclusion","串丝","发丝状包裹体","发丝包裹体","链状包裹体"],
+        "boost": ["solution inclusion","mother solution","dislocation","hydrodynamics","mass transfer","laser damage","液态包裹体","母液","位错","流体动力学","传质","激光损伤"],
+    },
+    "流场传质": {
+        "triggers": ["流场","传质","表面过饱和度","局部过饱和度","hydrodynamics","mass transfer","surface supersaturation"],
+        "must": ["hydrodynamics","flow field","mass transfer","solute transport","boundary layer","surface supersaturation","流场","流体动力学","传质","溶质输运","边界层","表面过饱和度"],
+        "boost": ["crystal size","rotation","vortex","growth rate","growth interface","inclusion","晶体尺寸","旋转","涡流","生长速率","生长界面","包裹体"],
+    },
     "氢空位": {
         "triggers": ["氢空位","质子空位","质子缺失","hydrogen vacancy","proton vacancy","h vacancy"],
         "must": ["氢空位","质子空位","质子缺失","hydrogen vacancy","proton vacancy","h vacancy","hydrogen defect"],
@@ -152,8 +176,12 @@ def load_data():
                 "包裹体","夹杂","散射中心",
             ]),
             _series_hit(evidence_text, [
-                "dislocation","growth striation","lattice strain","residual strain",
-                "位错","生长条纹","晶格应变","残余应变",
+                "growth striation","growth striations","growth band","growth bands","white striation",
+                "白纹","生长条纹","生长带",
+            ]),
+            _series_hit(evidence_text, [
+                "dislocation","lattice strain","residual strain",
+                "位错","晶格应变","残余应变",
             ]),
             _series_hit(evidence_text, [
                 "seed crystal","seed orientation","seed holder","constraint",
@@ -179,6 +207,7 @@ def load_data():
             "本征点缺陷",
             "杂质/掺杂",
             "包裹体/散射中心",
+            "生长条纹/白纹",
             "位错/晶格应变",
             "籽晶/固定约束",
             "晶体生长条件/界面",
@@ -321,6 +350,11 @@ def load_data():
         ("分子动力学", [
             "molecular dynamics","md simulation","atomistic simulation",
             "分子动力学","原子模拟",
+        ]),
+        ("CFD/流动传质", [
+            "computational fluid dynamics","cfd","hydrodynamic simulation","flow simulation",
+            "mass transfer simulation","convection and mass transfer","flow and mass transfer",
+            "计算流体力学","流场模拟","传质模拟","流动与传质",
         ]),
         ("有限元/连续介质", [
             "finite element","fem","multiphysics","continuum mechanics",

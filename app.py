@@ -7,6 +7,9 @@ from security import safe_page, sidebar_security
 from direction_review import direction_review_page
 from experiment_lab import experiment_lab_page
 from home_page import home_page
+from theory_learning import theory_learning_page
+from scale_effect import scale_effect_page
+from material_properties import material_properties_page
 from experiment_vault import sidebar_vault_status
 from project_workspace import project_workspace_page
 from research_memory import sidebar_project_switcher
@@ -62,6 +65,12 @@ PAGE = {
         icon=":material/account_tree:",
         url_path="project",
     ),
+    "learn": st.Page(
+        safe_page(theory_learning_page),
+        title="KDP理论基础学习",
+        icon=":material/menu_book:",
+        url_path="theory-learning",
+    ),
     "literature": st.Page(
         safe_page(literature),
         title="文献中心",
@@ -92,9 +101,15 @@ PAGE = {
         icon=":material/compare_arrows:",
         url_path="compare",
     ),
+    "scale": st.Page(
+        safe_page(scale_effect_page),
+        title="大尺寸尺度效应研究",
+        icon=":material/straighten:",
+        url_path="scale-effect",
+    ),
     "diagnosis": st.Page(
         safe_page(crack_diagnosis),
-        title="开裂诊断",
+        title="缺陷与开裂诊断",
         icon=":material/crisis_alert:",
         url_path="diagnosis",
     ),
@@ -109,6 +124,12 @@ PAGE = {
         title="实验记录与数据积累",
         icon=":material/database:",
         url_path="experiment-log",
+    ),
+    "properties": st.Page(
+        safe_page(material_properties_page),
+        title="物性参数与测试",
+        icon=":material/biotech:",
+        url_path="material-properties",
     ),
     "theory": st.Page(
         safe_page(theory),
@@ -152,6 +173,9 @@ pages = {
         PAGE["overview"],
         PAGE["project"],
     ],
+    "理论基础": [
+        PAGE["learn"],
+    ],
     "文献与知识": [
         PAGE["literature"],
         PAGE["knowledge"],
@@ -160,9 +184,11 @@ pages = {
         PAGE["compare"],
     ],
     "实验与计算": [
+        PAGE["scale"],
         PAGE["diagnosis"],
         PAGE["experiment"],
         PAGE["experiment_log"],
+        PAGE["properties"],
         PAGE["theory"],
         PAGE["gaps"],
     ],

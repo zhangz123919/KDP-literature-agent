@@ -61,6 +61,11 @@ INPUT_FIELDS = [
     "fixation",
     "temperature_stability",
     "rotation",
+    "rotation_rpm",
+    "growth_stage",
+    "stage_start_size_mm",
+    "stage_end_size_mm",
+    "circulation_flow",
 ]
 
 TARGET_FIELDS = [
@@ -73,6 +78,15 @@ TARGET_FIELDS = [
     "final_height_mm",
     "inclusion",
     "scattering",
+    "white_striation",
+    "white_density_grade",
+    "white_width_mm",
+    "white_spacing_mm",
+    "hair_inclusion",
+    "hair_count",
+    "hair_length_mm",
+    "hair_chain_density_per_mm",
+    "hair_orientation_deg",
 ]
 
 
@@ -162,7 +176,14 @@ def _flatten(rec):
         "生长终止温度(℃)": p.get("growth_temp_end"),
         "降温速率(℃/h)": p.get("cooling_rate"),
         "生长时间(h)": p.get("growth_hours"),
+        "生长阶段": p.get("growth_stage", ""),
+        "阶段起始特征尺寸(mm)": p.get("stage_start_size_mm"),
+        "阶段结束特征尺寸(mm)": p.get("stage_end_size_mm"),
+        "生长构型/方法": p.get("growth_method", ""),
         "旋转/流动": p.get("rotation", ""),
+        "转速(rpm)": p.get("rotation_rpm"),
+        "换向/旋转程序": p.get("reversal_program", ""),
+        "循环/流量": p.get("circulation_flow", ""),
         "温度稳定性": p.get("temperature_stability", ""),
         "籽晶类型": p.get("seed_type", ""),
         "籽晶取向": p.get("seed_orientation", ""),
@@ -180,6 +201,19 @@ def _flatten(rec):
         "裂纹方向/形貌": p.get("crack_direction", ""),
         "包裹体": p.get("inclusion", ""),
         "散射点": p.get("scattering", ""),
+        "白纹": p.get("white_striation", ""),
+        "白纹密度等级": p.get("white_density_grade", ""),
+        "白纹位置": p.get("white_location", ""),
+        "白纹方向": p.get("white_direction", ""),
+        "白纹宽度(mm)": p.get("white_width_mm"),
+        "白纹间距(mm)": p.get("white_spacing_mm"),
+        "白纹首次出现阶段": p.get("white_first_stage", ""),
+        "串丝": p.get("hair_inclusion", ""),
+        "串丝数量": p.get("hair_count"),
+        "串丝总长度(mm)": p.get("hair_length_mm"),
+        "串丝链密度(mm^-1)": p.get("hair_chain_density_per_mm"),
+        "串丝方向角(°)": p.get("hair_orientation_deg"),
+        "串丝位置": p.get("hair_location", ""),
         "最终质量(g)": p.get("final_mass_g"),
         "最终长度(mm)": p.get("final_length_mm"),
         "最终宽度(mm)": p.get("final_width_mm"),
@@ -351,10 +385,20 @@ def _new_record_form(project):
         t_end_text = c3.text_input("生长终止温度(℃)")
         cooling_text = c4.text_input("降温速率(℃/h)")
 
-        d1, d2, d3 = st.columns(3)
+        d1, d2, d3, d4 = st.columns(4)
         growth_hours_text = d1.text_input("生长时间(h)")
-        rotation = d2.text_input("旋转/流动条件")
-        temp_stability = d3.text_input("温度稳定性", placeholder="例如 ±0.02 ℃")
+        growth_stage = d2.selectbox("生长阶段", ["未知", "籽晶/初期", "小尺寸", "中尺寸", "大尺寸", "成锥/透明区阶段", "其他"])
+        stage_start_size_text = d3.text_input("阶段起始特征尺寸(mm)")
+        stage_end_size_text = d4.text_input("阶段结束特征尺寸(mm)")
+
+        d5, d6, d7, d8 = st.columns(4)
+        growth_method = d5.text_input("生长构型/方法", placeholder="例如传统法/长籽晶/限制法")
+        rotation_rpm_text = d6.text_input("转速(rpm)")
+        reversal_program = d7.text_input("换向/旋转程序")
+        circulation_flow = d8.text_input("循环/流量/搅拌")
+        d9, d10 = st.columns(2)
+        rotation = d9.text_input("旋转/流动条件补充说明")
+        temp_stability = d10.text_input("温度稳定性", placeholder="例如 ±0.02 ℃")
 
         section_title("3｜籽晶与机械约束", "以后可以与开裂诊断、有限元和历史实验自动关联")
         e1, e2, e3, e4 = st.columns(4)
@@ -389,6 +433,30 @@ def _new_record_form(project):
         i1, i2 = st.columns(2)
         crack_location = i1.text_input("裂纹起始位置")
         crack_direction = i2.text_input("裂纹方向/形貌")
+
+        with st.expander("白纹 / 生长条纹详细记录", expanded=True):
+            w1, w2, w3 = st.columns(3)
+            white_striation = w1.selectbox("是否出现白纹", ["未知", "无", "有"])
+            white_density_grade = w2.selectbox("白纹密度等级", ["未知", "无明显", "少量", "中等", "大量"])
+            white_first_stage = w3.text_input("首次出现对应阶段/尺寸")
+            w4, w5 = st.columns(2)
+            white_location = w4.text_input("白纹空间位置", placeholder="锥区/柱区、中心/边缘、距籽晶距离、晶面")
+            white_direction = w5.text_input("白纹方向/与晶面关系")
+            w6, w7 = st.columns(2)
+            white_width_text = w6.text_input("代表性白纹宽度(mm)")
+            white_spacing_text = w7.text_input("代表性白纹间距/周期(mm)")
+            white_notes = st.text_area("白纹形貌补充", height=60, placeholder="连续/断续、帷幕状、不同观察角度是否明显等")
+
+        with st.expander("串丝 / 发丝状包裹体详细记录", expanded=True):
+            h4, h5, h6 = st.columns(3)
+            hair_inclusion = h4.selectbox("是否出现串丝", ["未知", "无", "有"])
+            hair_count_text = h5.text_input("串丝数量")
+            hair_length_text = h6.text_input("串丝总长度/代表长度(mm)")
+            h7, h8 = st.columns(2)
+            hair_density_text = h7.text_input("链密度(mm^-1，可选)")
+            hair_orientation_text = h8.text_input("与c轴/参考方向夹角(°)")
+            hair_location = st.text_input("串丝空间位置/晶面/扇区")
+            hair_notes = st.text_area("串丝形貌补充", height=60, placeholder="直链/弯曲/成簇；显微下是否由离散液态包裹体组成")
 
         section_title("6｜机器学习友好的连续结果 Y", "文字描述保留给人看，数值字段才能真正用于回归、分类和优化")
         j1, j2, j3, j4 = st.columns(4)
@@ -457,7 +525,14 @@ def _new_record_form(project):
         "growth_temp_end": _optional_float(t_end_text),
         "cooling_rate": _optional_float(cooling_text),
         "growth_hours": _optional_float(growth_hours_text),
+        "growth_stage": growth_stage,
+        "stage_start_size_mm": _optional_float(stage_start_size_text),
+        "stage_end_size_mm": _optional_float(stage_end_size_text),
+        "growth_method": growth_method,
         "rotation": rotation,
+        "rotation_rpm": _optional_float(rotation_rpm_text),
+        "reversal_program": reversal_program,
+        "circulation_flow": circulation_flow,
         "temperature_stability": temp_stability,
         "seed_type": seed_type,
         "seed_orientation": seed_orientation,
@@ -471,6 +546,21 @@ def _new_record_form(project):
         "cracked": cracked,
         "inclusion": inclusion,
         "scattering": scattering,
+        "white_striation": white_striation,
+        "white_density_grade": white_density_grade,
+        "white_location": white_location,
+        "white_direction": white_direction,
+        "white_width_mm": _optional_float(white_width_text),
+        "white_spacing_mm": _optional_float(white_spacing_text),
+        "white_first_stage": white_first_stage,
+        "white_notes": white_notes,
+        "hair_inclusion": hair_inclusion,
+        "hair_count": _optional_float(hair_count_text),
+        "hair_length_mm": _optional_float(hair_length_text),
+        "hair_chain_density_per_mm": _optional_float(hair_density_text),
+        "hair_orientation_deg": _optional_float(hair_orientation_text),
+        "hair_location": hair_location,
+        "hair_notes": hair_notes,
         "crack_latency_min": _optional_float(crack_latency_text),
         "crack_count": _optional_float(crack_count_text),
         "crack_time": crack_time,
@@ -522,8 +612,9 @@ def _history():
     flat = _records_table(records)
     section_title("我的实验", "详细参数只有保险库解锁后才能查看；失败实验不会被过滤")
     show_cols = [
-        "实验ID", "日期", "研究目的", "开裂", "裂纹延迟(min)",
-        "包裹体", "散射点", "最终质量(g)", "最终长度(mm)",
+        "实验ID", "日期", "研究目的", "生长阶段", "阶段结束特征尺寸(mm)",
+        "白纹", "白纹密度等级", "串丝", "串丝数量",
+        "开裂", "裂纹延迟(min)", "包裹体", "散射点", "最终质量(g)", "最终长度(mm)",
         "修订版本", "更新时间",
     ]
     st.dataframe(
@@ -585,6 +676,12 @@ def _history():
             width = d3.text_input("最终宽度(mm)", value=_display_value(p.get("final_width_mm")))
             height = d4.text_input("最终高度(mm)", value=_display_value(p.get("final_height_mm")))
 
+            e1, e2, e3, e4 = st.columns(4)
+            white_striation = e1.selectbox("白纹", ["未知", "无", "有"], index=["未知", "无", "有"].index(p.get("white_striation", "未知")) if p.get("white_striation", "未知") in ["未知", "无", "有"] else 0)
+            white_density = e2.selectbox("白纹密度", ["未知", "无明显", "少量", "中等", "大量"], index=["未知", "无明显", "少量", "中等", "大量"].index(p.get("white_density_grade", "未知")) if p.get("white_density_grade", "未知") in ["未知", "无明显", "少量", "中等", "大量"] else 0)
+            hair_inclusion = e3.selectbox("串丝", ["未知", "无", "有"], index=["未知", "无", "有"].index(p.get("hair_inclusion", "未知")) if p.get("hair_inclusion", "未知") in ["未知", "无", "有"] else 0)
+            hair_count = e4.text_input("串丝数量", value=_display_value(p.get("hair_count")))
+
             result_summary = st.text_area("结果摘要", value=rec.get("summary", ""), height=90)
             hypothesis = st.text_area("当前假设", value=p.get("current_hypothesis", ""), height=70)
             next_step = st.text_area("下一步", value=p.get("next_step", ""), height=70)
@@ -600,6 +697,10 @@ def _history():
                 "crack_direction": direction,
                 "inclusion": inclusion,
                 "scattering": scattering,
+                "white_striation": white_striation,
+                "white_density_grade": white_density,
+                "hair_inclusion": hair_inclusion,
+                "hair_count": _optional_float(hair_count),
                 "final_mass_g": _optional_float(mass),
                 "final_length_mm": _optional_float(length),
                 "final_width_mm": _optional_float(width),
@@ -711,6 +812,7 @@ def _compare():
     compare_fields = [
         "过饱和度(%)", "生长起始温度(℃)", "生长终止温度(℃)",
         "降温速率(℃/h)", "生长时间(h)", "pH",
+        "生长阶段", "阶段起始特征尺寸(mm)", "阶段结束特征尺寸(mm)", "转速(rpm)", "循环/流量",
         "籽晶类型", "籽晶取向", "籽晶质量", "固定方式",
         "取晶温度(℃)", "环境温度(℃)", "冷却方式",
     ]
@@ -775,7 +877,7 @@ def _data_quality():
     important = [
         "过饱和度(%)", "生长起始温度(℃)", "生长终止温度(℃)",
         "降温速率(℃/h)", "生长时间(h)", "pH",
-        "籽晶取向", "固定方式", "开裂",
+        "生长阶段", "阶段结束特征尺寸(mm)", "籽晶取向", "固定方式", "白纹", "串丝", "开裂",
     ]
     missing = []
     for col in important:
@@ -844,6 +946,10 @@ def _ml_ready():
         "最终长度（回归）": "最终长度(mm)",
         "包裹体等级（分类）": "包裹体",
         "散射等级（分类）": "散射点",
+        "白纹有无（分类）": "白纹",
+        "白纹密度等级（分类）": "白纹密度等级",
+        "串丝有无（分类）": "串丝",
+        "串丝数量（回归）": "串丝数量",
     }
     target_name = st.selectbox("未来准备预测的目标 Y", list(target_map))
     target = target_map[target_name]
@@ -883,14 +989,15 @@ def _ml_ready():
     else:
         st.info("数据规模开始具备正式基线建模的条件；仍需划分独立验证集，并防止同批次数据泄漏到训练集和测试集。")
 
-    if target in {"开裂", "包裹体", "散射点"} and n_valid:
+    if target in {"开裂", "包裹体", "散射点", "白纹", "白纹密度等级", "串丝"} and n_valid:
         dist = flat.loc[valid_y, target].value_counts().rename_axis("类别").reset_index(name="样本数")
         st.dataframe(dist, width="stretch", hide_index=True)
 
     section_title("未来模型的数据表", "X和Y已经从实验记录自动整理；以后接机器学习时无需重新人工录表")
     export_cols = ["实验ID", "日期"] + input_cols + [
         "开裂", "裂纹延迟(min)", "裂纹数量",
-        "包裹体", "散射点", "最终质量(g)",
+        "包裹体", "散射点", "白纹", "白纹密度等级", "白纹宽度(mm)", "白纹间距(mm)",
+        "串丝", "串丝数量", "串丝总长度(mm)", "串丝链密度(mm^-1)", "串丝方向角(°)", "最终质量(g)",
         "最终长度(mm)", "最终宽度(mm)", "最终高度(mm)",
     ]
     export_cols = [c for c in export_cols if c in flat.columns]

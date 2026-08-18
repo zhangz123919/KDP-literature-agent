@@ -432,11 +432,15 @@ def duplicate_record(record_id: str, new_experiment_id: str, clear_results: bool
             "cracked", "crack_time", "crack_latency_min", "crack_count",
             "crack_location", "crack_direction", "inclusion", "scattering",
             "final_mass_g", "final_length_mm", "final_width_mm", "final_height_mm",
-            "crystal_size", "microscopy_summary", "xrd_summary", "raman_summary",
+            "crystal_size", "white_striation", "white_density_grade", "white_location",
+            "white_direction", "white_width_mm", "white_spacing_mm", "white_first_stage", "white_notes",
+            "hair_inclusion", "hair_count", "hair_length_mm", "hair_chain_density_per_mm",
+            "hair_orientation_deg", "hair_location", "hair_notes",
+            "microscopy_summary", "xrd_summary", "raman_summary",
             "ftir_summary", "other_characterization", "result_summary",
             "current_hypothesis", "next_step",
         ]:
-            if key in {"cracked", "inclusion", "scattering"}:
+            if key in {"cracked", "inclusion", "scattering", "white_striation", "white_density_grade", "hair_inclusion"}:
                 p[key] = "未知"
             else:
                 p[key] = None if key.endswith(("_g", "_mm", "_min")) or key == "crack_count" else ""
@@ -581,6 +585,8 @@ def sanitized_summary() -> str:
     labelled = 0
     inclusion = 0
     scattering = 0
+    white = 0
+    hair = 0
 
     for r in rows:
         p = r.get("payload", {})
@@ -592,11 +598,16 @@ def sanitized_summary() -> str:
             inclusion += 1
         if p.get("scattering") == "明显":
             scattering += 1
+        if p.get("white_striation") == "有":
+            white += 1
+        if p.get("hair_inclusion") == "有":
+            hair += 1
 
     return (
         f"当前项目共有 {len(rows)} 组受保护实验记录；"
         f"其中 {labelled} 组已有明确开裂标签，开裂记录 {cracked} 组；"
-        f"明显包裹体记录 {inclusion} 组，明显散射记录 {scattering} 组。"
+        f"明显包裹体记录 {inclusion} 组，明显散射记录 {scattering} 组；"
+        f"白纹记录 {white} 组，串丝记录 {hair} 组。"
         "本摘要不包含原始配方、具体工艺参数、附件或精确数值。"
     )
 

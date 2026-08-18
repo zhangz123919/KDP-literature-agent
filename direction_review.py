@@ -11,19 +11,17 @@ import plotly.graph_objects as go
 import streamlit as st
 from openai import OpenAI
 
-from engine import CORE_TOPICS, TOPICS, load_data, material_scope, search_papers, topic_search, topic_stats
+from engine import TOPICS, load_data, search_papers, topic_search, topic_stats
 from reports import docx_bytes, excel_bytes
-from research_memory import add_item, build_project_context, get_active_project, project_context_strip
-from security import enforce_ai_quota, guard_duplicate_ai_request, remaining_ai_calls, safe_error, validate_user_text
-from ui import COLORS, insight_strip, metric_cards, page_header, plotly, section_title, soft_note
-from usage_monitor import record_deepseek_usage, render_deepseek_usage
+from security import enforce_ai_quota, remaining_ai_calls, safe_error, validate_user_text
+from ui import COLORS, metric_cards, page_header, plotly, section_title, soft_note
 from web_research import research_web, source_links_markdown
 
 
 SYSTEM = """
-你是“KDP晶体缺陷与开裂研究方向决策顾问”。
+你是“大尺寸KDP晶体生长、缺陷与开裂研究方向决策顾问”。
 
-你的任务不是泛泛介绍KDP，而是基于用户已有的大规模文献数据库、代表性论文证据和最新外部资料，
+你的任务不是泛泛介绍KDP，而是以KDP为绝对主线，基于用户已有的大规模文献数据库、代表性论文证据和最新外部资料，
 帮助硕博研究者确定未来6–12个月可以真正推进的研究问题与研究课题。
 
 必须遵守：
@@ -39,7 +37,8 @@ SYSTEM = """
 6. 课题推荐必须兼顾科学价值、可验证性、工作量、实验/计算条件和毕业周期。
 7. 具体题目建议要落到“研究对象 + 科学问题 + 方法 + 可验证结果”，不能只写大方向。
 8. 对于每个推荐题目，必须给出风险和“如果做不出来怎么办”的备选路线。
-9. 默认研究对象必须是 KDP。除非用户明确提出氘化/同位素比较，DKDP只能作为对照或扩展证据，不得与KDP并列成为报告主标题、主研究方向或默认候选课题。
+9. 当前优先研究背景是大尺寸KDP水溶液生长：重点评估“小晶体→大晶体”的尺度效应、流场/传质/表面过饱和度、白纹/生长条纹、串丝/hair inclusion、包裹体、热应力与开裂。
+10. DKDP只作为同位素对照/扩展证据，除非用户明确要求，不得与KDP并列为默认主线。
 """
 
 
@@ -67,14 +66,14 @@ def _build_evidence_pack(
     - 每个专题在命中文献中按科研优先分/被引/年份选代表文献
     - 只有用户自定义重点问题再调用一次 search_papers
     """
-    rel = material_scope(df, "KDP主线")
+    rel = df[df["V5相关池"] == "KDP/DKDP相关池"].copy()
     if rel.empty:
         return df.head(0).copy()
 
     pieces = []
     text_series = rel["_text"].fillna("").astype(str)
 
-    for topic, terms in CORE_TOPICS.items():
+    for topic, terms in TOPICS.items():
         terms = [str(t).strip() for t in terms if str(t).strip()]
         if not terms:
             continue
@@ -85,14 +84,14 @@ def _build_evidence_pack(
 
         if len(d):
             d = d.sort_values(
-                ["V5核心排序分", "证据完整度分", "V5科研优先分", "被引次数", "年份"],
+                ["V5科研优先分", "被引次数", "年份"],
                 ascending=False,
             ).head(per_topic)
             d["_方向专题"] = topic
             pieces.append(d)
 
     if str(focus or "").strip():
-        targeted = search_papers(df, focus, 14, "KDP主线").copy()
+        targeted = search_papers(df, focus, 14, "相关池").copy()
         if len(targeted):
             targeted["_方向专题"] = "用户重点问题"
             pieces.append(targeted)
@@ -112,7 +111,7 @@ def _build_evidence_pack(
     pack = pack.assign(_dedupe_key=dedupe_key).drop_duplicates("_dedupe_key")
 
     pack = pack.sort_values(
-        ["V5核心排序分", "证据完整度分", "V5科研优先分", "被引次数", "年份"],
+        ["V5科研优先分", "被引次数", "年份"],
         ascending=False,
     ).head(max_total)
 
@@ -160,9 +159,6 @@ def _evidence_context(pack: pd.DataFrame, maxp: int = 48) -> Tuple[str, List[Dic
             f"期刊：{_clean(r.get('期刊',''))}\n"
             f"DOI：{_clean(r.get('DOI',''))}\n"
             f"等级：{_clean(r.get('V5推荐等级',''))}\n"
-            f"核心角色：{_clean(r.get('核心证据层级','—'))}\n"
-            f"证据完整度：{r.get('证据完整度分','')} / 100（{_clean(r.get('证据完整度状态',''))}）\n"
-            f"证据角色：{_clean(r.get('证据角色',''))}\n"
             f"分类：{_clean(r.get('详细二级分类',''))}\n"
             f"来源：{_clean(r.get('缺陷/应力来源',''))}\n"
             f"机制：{_clean(r.get('作用机制',''))}\n"
@@ -194,9 +190,9 @@ def _make_landscape_figure(stats: pd.DataFrame):
             x=s["总文献"],
             y=s["专题"],
             orientation="h",
-            name="长期积累",
-            marker=dict(color="#DCE5EE", line=dict(width=0)),
-            hovertemplate="<b>%{y}</b><br>全部相关文献 %{x} 篇<extra></extra>",
+            name="全部相关文献",
+            marker_color="#DCE4EF",
+            hovertemplate="<b>%{y}</b><br>总量 %{x} 篇<extra></extra>",
         )
     )
 
@@ -206,163 +202,58 @@ def _make_landscape_figure(stats: pd.DataFrame):
             y=s["专题"],
             orientation="h",
             name="近五年",
-            marker=dict(color=COLORS["primary"], line=dict(width=0)),
-            text=s["近5年"].where(s["近5年"] > 0, ""),
-            textposition="outside",
-            textfont=dict(size=10, color="#52677F"),
+            marker_color=COLORS["cyan"],
             hovertemplate="<b>%{y}</b><br>近五年 %{x} 篇<extra></extra>",
         )
     )
 
     fig.update_layout(
         barmode="overlay",
-        bargap=.32,
+        bargap=.28,
         xaxis_title="文献数",
         yaxis_title="",
-        legend=dict(orientation="h", x=0, y=1.07),
+        legend=dict(orientation="h", x=0, y=1.08),
     )
 
     return fig
 
 
 def _make_method_gap_figure(stats: pd.DataFrame):
-    s = stats.copy().sort_values("近五年占比", ascending=False)
-    if s.empty:
-        return go.Figure()
+    s = stats.copy().sort_values("近5年占比", ascending=False)
 
-    x_mid = float(s["总文献"].median())
-    y_mid = float(s["近五年占比"].median())
-
-    # 只给最值得辨认的点常驻标签，避免像默认散点图一样满屏文字。
-    label_score = (
-        s["近五年占比"].rank(pct=True)
-        + s["S/A"].rank(pct=True)
-        + s["总文献"].rank(pct=True) * .45
-    )
-    top_label_idx = set(label_score.nlargest(min(7, len(s))).index)
-    labels = [row["专题"] if idx in top_label_idx else "" for idx, row in s.iterrows()]
-
-    fig = go.Figure()
-
-    # 四象限的极淡背景，只作为读图辅助。
-    x_max = max(float(s["总文献"].max()) * 1.08, x_mid + 1)
-    y_max = max(float(s["近五年占比"].max()) * 1.12, y_mid + 1)
-
-    fig.add_shape(
-        type="rect", x0=x_mid, x1=x_max, y0=y_mid, y1=y_max,
-        fillcolor="rgba(19,89,166,.045)", line_width=0, layer="below"
-    )
-
-    fig.add_vline(x=x_mid, line_width=1, line_dash="dot", line_color="rgba(91,109,130,.45)")
-    fig.add_hline(y=y_mid, line_width=1, line_dash="dot", line_color="rgba(91,109,130,.45)")
-
-    fig.add_trace(
+    fig = go.Figure(
         go.Scatter(
             x=s["总文献"],
-            y=s["近五年占比"],
+            y=s["近5年占比"],
             mode="markers+text",
-            text=labels,
+            text=s["专题"],
             textposition="top center",
-            textfont=dict(size=10, color="#314B67"),
-            customdata=np.stack(
-                [s["专题"], s["S/A"], s["DFT"], s["核心文献密度"]],
-                axis=-1,
-            ),
             marker=dict(
-                size=np.clip(12 + s["S/A"].to_numpy() * .16, 14, 42),
+                size=np.clip(12 + s["S/A"].to_numpy() * .18, 14, 48),
                 color=s["DFT占比"],
                 colorscale=[
-                    [0, "#D6E2EE"],
-                    [.52, "#4E82BE"],
-                    [1, "#0E8F96"],
+                    [0, "#D7E0EC"],
+                    [.45, "#8C84E9"],
+                    [1, "#20AFC0"],
                 ],
-                colorbar=dict(
-                    title=dict(text="DFT占比", font=dict(size=10)),
-                    thickness=9,
-                    len=.62,
-                    outlinewidth=0,
-                ),
-                line=dict(color="#FFFFFF", width=1.2),
-                opacity=.93,
+                colorbar=dict(title="DFT占比 %"),
+                line=dict(color="white", width=1),
+                opacity=.92,
             ),
             hovertemplate=(
-                "<b>%{customdata[0]}</b><br>"
-                "证据规模 %{x} 篇<br>"
-                "近五年占比 %{y:.1f}%<br>"
-                "S/A %{customdata[1]} 篇<br>"
-                "DFT %{customdata[2]} 篇"
+                "<b>%{text}</b><br>"
+                "总文献 %{x}<br>"
+                "近五年占比 %{y:.1f}%"
                 "<extra></extra>"
             ),
         )
     )
 
-    fig.add_annotation(
-        x=x_max, y=y_max,
-        text="证据较厚 · 近期更活跃",
-        showarrow=False,
-        xanchor="right", yanchor="top",
-        font=dict(size=10, color="#1359A6"),
-    )
-
     fig.update_layout(
         xaxis_title="证据规模（文献数）",
         yaxis_title="近五年占比（%）",
-        showlegend=False,
     )
     return fig
-
-
-
-def _usage_dict(usage) -> dict:
-    if usage is None:
-        return {}
-    if hasattr(usage, "model_dump"):
-        return usage.model_dump()
-    if isinstance(usage, dict):
-        return usage
-    return {
-        "prompt_tokens": getattr(usage, "prompt_tokens", 0),
-        "completion_tokens": getattr(usage, "completion_tokens", 0),
-        "total_tokens": getattr(usage, "total_tokens", 0),
-        "prompt_cache_hit_tokens": getattr(usage, "prompt_cache_hit_tokens", 0),
-        "prompt_cache_miss_tokens": getattr(usage, "prompt_cache_miss_tokens", 0),
-    }
-
-
-def _estimate_rmb(model: str, usage) -> dict:
-    """
-    按 DeepSeek 官方 2026-08 公开价做前端估算。
-    实际扣费以 DeepSeek 控制台账单为准。
-    """
-    u = _usage_dict(usage)
-    hit = int(u.get("prompt_cache_hit_tokens") or 0)
-    miss = int(u.get("prompt_cache_miss_tokens") or 0)
-    prompt = int(u.get("prompt_tokens") or 0)
-    completion = int(u.get("completion_tokens") or 0)
-
-    # 某些SDK/响应若未拆分hit/miss，则保守按全部未命中估算
-    if hit == 0 and miss == 0 and prompt:
-        miss = prompt
-
-    m = str(model or "").lower()
-    if "flash" in m:
-        hit_price, miss_price, out_price = 0.02, 1.0, 2.0
-    else:
-        hit_price, miss_price, out_price = 0.025, 3.0, 6.0
-
-    cost = (
-        hit / 1_000_000 * hit_price
-        + miss / 1_000_000 * miss_price
-        + completion / 1_000_000 * out_price
-    )
-    return {
-        "cache_hit_tokens": hit,
-        "cache_miss_tokens": miss,
-        "completion_tokens": completion,
-        "prompt_tokens": prompt,
-        "total_tokens": int(u.get("total_tokens") or (prompt + completion)),
-        "estimated_cny": cost,
-    }
 
 
 def stream_direction_report(
@@ -377,13 +268,8 @@ def stream_direction_report(
 
     focus = validate_user_text(focus, "重点问题")
     constraints = validate_user_text(constraints, "现实约束")
-    project_context = build_project_context(for_external_ai=True)
-    guard_duplicate_ai_request(
-        f"direction|{focus}|{constraints}|{horizon}|{theory_weight}|{quick}",
-        window_seconds=45,
-    )
 
-    yield {"type": "stage", "text": "正在扫描 KDP 主研究文献的专题结构…"}
+    yield {"type": "stage", "text": "正在扫描KDP主线文献，并提取大尺寸生长、尺度效应、白纹/串丝与开裂专题结构…"}
 
     stats = _topic_snapshot(df)
 
@@ -400,8 +286,8 @@ def stream_direction_report(
     }
 
     web_query = (
-        "KDP KH2PO4 crystal cracking defects growth thermal stress inclusion "
-        "hydrogen vacancy laser damage first principles review research gap 2022 2026 "
+        "KDP large scale crystal growth scale effect hydrodynamics mass transfer surface supersaturation "
+        "growth striation hair inclusion liquid inclusion thermal stress cracking CFD fracture 2022 2026 "
         + str(focus or "")
     )
     web_context, web_sources, web_status = research_web(web_query)
@@ -425,16 +311,13 @@ def stream_direction_report(
 {quick_instruction}
 
 请生成一份可以直接用于“本人 + 导师共同确定研究课题”的
-《KDP晶体缺陷、开裂与损伤研究方向决策型文献调研报告》。
+《大尺寸KDP晶体生长、缺陷与开裂研究方向决策型文献调研报告》。
 
 【研究者重点关注】
 {focus or "尚未限定，请从全景调研中识别最值得深入的问题"}
 
 【现实约束】
 {constraints or "暂无额外约束，请按硕博阶段个人科研可执行性进行判断"}
-
-【当前研究项目记忆】
-{project_context if project_context else "当前没有额外项目记忆。"}
 
 【希望覆盖的研究周期】
 {horizon}
@@ -448,7 +331,7 @@ def stream_direction_report(
 {_stats_text(stats)}
 
 注意：
-上述统计来自KDP主研究文献池的全库扫描；DKDP文献仅在同位素对照确有帮助时作为扩展证据。
+上述统计来自用户KDP/DKDP相关文献池的全库扫描。
 它用于判断领域规模、近期活跃度和方法覆盖；
 但“研究空白”不能仅靠文献数量自动得出。
 
@@ -481,18 +364,19 @@ def stream_direction_report(
 
 # 2. KDP领域整体研究版图
 不要按论文逐篇罗列。
-按“研究问题”组织：
-- 晶体生长与快速生长
-- 本征点缺陷/氢空位
-- 杂质与掺杂
-- 包裹体与散射中心
-- 位错与晶格应变
-- 表面/亚表面加工损伤
-- 热应力、残余应力与开裂
-- 激光损伤/LIDT
-- 同位素对照（仅在有助于验证KDP机制时简要讨论）
-- DFT/MD/有限元
-- Raman/FTIR/XRD/AFM/光热等表征
+按“研究问题”组织，并优先回答大尺寸生长尺度效应：
+- 小晶体→大晶体的尺寸放大与生长相似性
+- 流场、传质、表面过饱和度与界面稳定性
+- 白纹 / growth striation 等条纹不均匀
+- 串丝 / hair inclusion 与液态包裹体
+- 普通包裹体、散射中心与位错
+- 热物性、各向异性弹性、热应力与开裂
+- 晶体取向、籽晶和固定约束
+- 本征点缺陷/氢空位与杂质（作为微观机制支线）
+- 表面/亚表面加工损伤与激光损伤（作为应用支线）
+- CFD/FEA/DFT/MD 多尺度计算
+- Raman/FTIR/XRD/显微/散射/应力等表征
+- DKDP同位素对照（扩展，不作为默认主线）
 
 每个主题都回答：
 已有共识是什么？
@@ -586,22 +470,11 @@ def stream_direction_report(
         max_retries=1,
     )
 
-    # 快速测试的目标是“验证流程”，不应付出正式研究报告的模型成本。
-    # 正式报告才使用 Pro + 深度思考。
-    if quick:
-        model = _secret("DEEPSEEK_FAST_MODEL", "deepseek-v4-flash")
-        thinking_enabled = False
-    else:
-        model = _secret("DEEPSEEK_MODEL", "deepseek-v4-pro")
-        thinking_enabled = True
+    model = _secret("DEEPSEEK_MODEL", "deepseek-v4-pro")
 
     yield {
         "type": "stage",
-        "text": (
-            f"正在使用 {model} "
-            + ("（快速非思考模式）" if quick else "（深度思考模式）")
-            + "进行跨专题综合与课题决策分析…"
-        ),
+        "text": f"正在使用 {model} 进行跨专题综合与课题决策分析…",
     }
 
     kwargs = {
@@ -611,47 +484,26 @@ def stream_direction_report(
             {"role": "user", "content": prompt},
         ],
         "stream": True,
-        # DeepSeek官方支持在流式最后返回整次请求usage
-        "stream_options": {"include_usage": True},
-        "extra_body": {
-            "thinking": {"type": "enabled" if thinking_enabled else "disabled"}
-        },
+        "extra_body": {"thinking": {"type": "enabled"}},
+        "reasoning_effort": "high",
     }
 
-    if thinking_enabled:
-        kwargs["reasoning_effort"] = "high"
-
-    if quick:
-        kwargs["max_tokens"] = 2600
-    else:
-        # 正式方向报告单独使用更高上限，避免深度思考占用大量completion后正文被截断。
-        # 可在Secrets中用 DIRECTION_REPORT_MAX_TOKENS 覆盖。
-        formal_max = _secret("DIRECTION_REPORT_MAX_TOKENS", 24000)
-        try:
-            kwargs["max_tokens"] = min(max(int(formal_max), 12000), 32000)
-        except Exception:
-            kwargs["max_tokens"] = 24000
+    max_tokens = _secret("AI_MAX_OUTPUT_TOKENS", 12000)
+    try:
+        max_tokens = int(max_tokens)
+        kwargs["max_tokens"] = min(max_tokens, 4200) if quick else max_tokens
+    except Exception:
+        pass
 
     response = client.chat.completions.create(**kwargs)
 
     reasoning_seen = False
-    final_usage = None
-    final_finish_reason = None
 
     for chunk in response:
-        # include_usage=True 时，最后一个chunk通常没有choices但带usage
-        usage = getattr(chunk, "usage", None)
-        if usage is not None:
-            final_usage = usage
-
-        if not getattr(chunk, "choices", None):
+        if not chunk.choices:
             continue
 
-        choice = chunk.choices[0]
-        if getattr(choice, "finish_reason", None):
-            final_finish_reason = choice.finish_reason
-
-        delta = choice.delta
+        delta = chunk.choices[0].delta
         reasoning = getattr(delta, "reasoning_content", None)
         content = getattr(delta, "content", None)
 
@@ -669,17 +521,12 @@ def stream_direction_report(
     if source_md:
         yield {"type": "content", "text": source_md}
 
-    usage_summary = record_deepseek_usage(model, final_usage)
-
     yield {
         "type": "done",
         "local_sources": local_sources,
         "evidence_pack": pack,
         "stats": stats,
         "model": model,
-        "usage": usage_summary,
-        "finish_reason": final_finish_reason,
-        "truncated": final_finish_reason == "length",
     }
 
 
@@ -691,13 +538,11 @@ def direction_review_page():
 
     page_header(
         "全景文献调研与研究方向决策",
-        "基于KDP主研究文献池，系统分析研究主题、核心证据、方法演化与潜在研究空白，并形成候选课题、优先方向及6–12个月研究路线。",
+        "扫描整个KDP相关证据池，围绕大尺寸生长尺度效应、白纹/串丝、流场传质和开裂形成领域版图、科学问题、研究空白、候选课题和6–12个月研究路线。",
         "RESEARCH DIRECTION REVIEW",
     )
 
-    project_context_strip()
-
-    rel = material_scope(df, "KDP主线")
+    rel = df[df["V5相关池"] == "KDP/DKDP相关池"]
     stats = _topic_snapshot(df)
     max_year = int(rel["年份"].max()) if len(rel) else 0
 
@@ -710,9 +555,9 @@ def direction_review_page():
                 "accent": COLORS["primary"],
             },
             {
-                "label": "KDP主研究池",
+                "label": "KDP/DKDP相关池",
                 "value": f"{len(rel):,}",
-                "note": "默认全景扫描对象",
+                "note": "全景扫描对象",
                 "accent": COLORS["cyan"],
             },
             {
@@ -729,37 +574,6 @@ def direction_review_page():
             },
         ]
     )
-
-    valid = stats[stats["总文献"] > 0].copy()
-    if len(valid):
-        active = valid.sort_values(["近5年占比", "近5年"], ascending=False).iloc[0]
-        evidence = valid.sort_values(["总文献", "S/A"], ascending=False).iloc[0]
-        core = valid.assign(
-            _core_density=valid["S/A"] / valid["总文献"].replace(0, np.nan) * 100
-        ).sort_values(["_core_density", "S/A"], ascending=False).iloc[0]
-
-        insight_strip(
-            [
-                {
-                    "kicker": "EVIDENCE BASE",
-                    "title": evidence["专题"],
-                    "note": f"当前证据规模 {int(evidence['总文献'])} 篇",
-                    "accent": COLORS["primary"],
-                },
-                {
-                    "kicker": "RECENT MOMENTUM",
-                    "title": active["专题"],
-                    "note": f"近五年占比 {active['近5年占比']:.1f}% · {int(active['近5年'])} 篇",
-                    "accent": COLORS["cyan"],
-                },
-                {
-                    "kicker": "CORE DENSITY",
-                    "title": core["专题"],
-                    "note": f"S/A {int(core['S/A'])} 篇 · 核心密度 {core['_core_density']:.1f}%",
-                    "accent": COLORS["orange"],
-                },
-            ]
-        )
 
     section = st.segmented_control(
         "方向决策工作区",
@@ -779,7 +593,7 @@ def direction_review_page():
         with left:
             section_title(
                 "专题证据规模",
-                "浅灰表示长期积累，国科蓝表示近五年；用来观察不同专题的证据厚度与近期动量",
+                "灰色代表长期积累，青色代表近五年；先看真实研究规模和近期活跃度",
             )
             fig = _make_landscape_figure(stats)
             plotly(fig, height=650, key="direction_landscape")
@@ -787,7 +601,7 @@ def direction_review_page():
         with right:
             section_title(
                 "研究机会地图",
-                "横轴看证据厚度，纵轴看近期动量；节点大小反映核心文献，颜色反映DFT覆盖",
+                "横轴=证据规模，纵轴=近五年占比，节点颜色=DFT覆盖；用于发现值得深入核查的方向",
             )
             fig = _make_method_gap_figure(stats)
             plotly(fig, height=650, key="direction_gap")
@@ -847,25 +661,23 @@ def direction_review_page():
         st.download_button(
             "导出代表证据包 Excel",
             excel_bytes(pack[show_cols], "方向决策证据包"),
-            "KDP_研究方向决策证据包.xlsx",
+            "KDP_DKDP_研究方向决策证据包.xlsx",
         )
 
         soft_note(
-            "这里展示的是“用于做方向判断的代表证据”，完整KDP主研究文献仍保留在文献中心。"
+            "这里展示的是“用于做方向判断的代表证据”，完整5928篇相关文献仍保留在文献中心。"
             "最终方向决策报告会同时使用全库统计、代表证据和外部最新资料。"
         )
         return
 
     # 只在真正进入“生成报告”工作区时运行这一段。
     with st.container(border=True):
-        active_project = get_active_project()
         focus = st.text_area(
             "希望重点解决的问题",
-            value=active_project.get("question", ""),
             height=100,
             placeholder=(
                 "可以留空让系统从全景中判断。也可以写："
-                "希望围绕KDP水溶液生长后的开裂问题，重点关注降温、籽晶、包裹体、位错和理论计算。"
+                "希望围绕大尺寸KDP水溶液生长的尺度效应与缺陷演化，重点关注小/中/大尺寸对照、流场传质、表面过饱和度、白纹、串丝、包裹体、热应力与开裂。"
             ),
         )
 
@@ -912,7 +724,7 @@ def direction_review_page():
     button_label = (
         "快速测试：生成精简方向决策报告"
         if run_mode == "快速测试"
-        else "生成《KDP研究方向决策型文献调研报告》"
+        else "生成《KDP/DKDP研究方向决策型文献调研报告》"
     )
 
     if not st.button(button_label, type="primary"):
@@ -929,9 +741,6 @@ def direction_review_page():
     evidence_pack = None
     report_stats = None
     model = ""
-    api_usage = {}
-    report_truncated = False
-    finish_reason = None
 
     try:
         for event in stream_direction_report(
@@ -962,35 +771,13 @@ def direction_review_page():
                 evidence_pack = event.get("evidence_pack")
                 report_stats = event.get("stats")
                 model = event.get("model", "")
-                api_usage = event.get("usage") or {}
-                finish_reason = event.get("finish_reason")
-                report_truncated = bool(event.get("truncated"))
-
-                cost_text = ""
-                if api_usage:
-                    cost_text = f" · 估算 ¥{api_usage.get('estimated_cny', 0):.4f}"
-
-                if report_truncated:
-                    status.update(
-                        label=f"报告达到输出上限 · {model}{cost_text}",
-                        state="error",
-                        expanded=True,
-                    )
-                else:
-                    status.update(
-                        label=f"方向决策报告完成 · {model}{cost_text}",
-                        state="complete",
-                        expanded=False,
-                    )
+                status.update(
+                    label=f"方向决策报告完成 · {model}",
+                    state="complete",
+                    expanded=False,
+                )
 
         answer_box.markdown(answer)
-
-        if report_truncated:
-            st.error(
-                "本次正式报告触发了模型输出长度上限，当前内容不能视为完整报告。"
-                "请不要直接拿截断版本做最终选题依据；可提高 DIRECTION_REPORT_MAX_TOKENS "
-                "或将报告分章节生成。"
-            )
 
     except PermissionError as exc:
         status.update(label="当前无法调用AI", state="error")
@@ -1005,9 +792,6 @@ def direction_review_page():
         )
         return
 
-    if api_usage:
-        render_deepseek_usage(api_usage)
-
     section_title(
         "报告使用建议",
         "建议先由本人标记“同意/不同意/待核实”，再与导师共同确定最终课题，而不是把AI推荐直接当成结论。",
@@ -1016,36 +800,16 @@ def direction_review_page():
     st.download_button(
         "导出方向决策报告 Word",
         docx_bytes(
-            "KDP_研究方向决策型文献调研报告",
+            "KDP_DKDP_研究方向决策型文献调研报告",
             answer,
             local_sources,
         ),
-        "KDP_研究方向决策型文献调研报告.docx",
+        "KDP_DKDP_研究方向决策型文献调研报告.docx",
     )
 
     if evidence_pack is not None and len(evidence_pack):
         st.download_button(
             "导出本次证据包 Excel",
             excel_bytes(evidence_pack, "方向决策证据包"),
-            "KDP_方向决策证据包.xlsx",
+            "KDP_DKDP_方向决策证据包.xlsx",
         )
-
-
-    if answer and not report_truncated:
-        if st.button("保存本次方向报告到当前研究项目"):
-            add_item(
-                "direction_decision",
-                "研究方向决策报告",
-                answer[:1800],
-                {
-                    "focus": focus,
-                    "constraints": constraints,
-                    "horizon": horizon,
-                    "theory_weight": theory_weight,
-                    "model": model,
-                    "full_report": answer,
-                },
-                "研究方向决策",
-                "待导师审核",
-            )
-            st.success("已保存到研究项目工作区，后续AI、实验设计和计算任务可以读取这次方向决策。")

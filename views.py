@@ -66,6 +66,13 @@ def dashboard():
 
     project_context_strip()
 
+    with st.container(border=True):
+        st.markdown("### 当前主线｜大尺寸KDP生长尺度效应与缺陷演化")
+        st.markdown(
+            "**小晶体 → 大晶体**过程中，重点追踪：尺寸变化 → 流场/传质/表面过饱和度 → 生长界面 → 白纹/串丝/包裹体 → 热—力耦合与开裂。"
+        )
+        st.caption("核心判断保持为工作假设：名义工艺相同不代表局部生长环境相同；需要实验、CFD和缺陷空间共定位共同验证。")
+
     related = material_scope(df, "KDP主线")
     rel = len(related)
     tiers = _tier_counts(related)
@@ -2363,17 +2370,22 @@ def compare():
 def crack_diagnosis():
     df = _df()
     page_header(
-        "开裂诊断",
-        "先做透明的工艺先验排序，再用KDP文献证据约束判断；输出可证伪的最小验证实验，而不是让AI直接猜原因。",
-        "CRACK DIAGNOSTICS",
+        "缺陷与开裂诊断",
+        "面向大尺寸KDP的白纹、串丝、包裹体与开裂现象，先做透明的工艺先验排序，再用文献证据和历史实验约束判断。",
+        "DEFECT & CRACK DIAGNOSTICS",
     )
 
     project_context_strip()
 
+    phenomenon_kind = st.selectbox(
+        "现象类型",
+        ["开裂", "白纹/生长条纹", "串丝/发丝状包裹体", "普通包裹体/散射点", "生长界面异常", "其他"],
+        key="diag_phenomenon_kind",
+    )
     phenomenon = st.text_area(
-        "开裂 / 缺陷现象",
+        "现象描述",
         height=110,
-        placeholder="例如：取晶后约30 min出现纵向裂纹，裂纹从籽晶附近开始扩展；请尽量写时间、位置、方向和发生阶段。",
+        placeholder="请尽量写：晶体尺寸/生长阶段、出现时间、空间位置、方向、密度/数量、对应晶面，以及当时温度、过饱和度、旋转/流动和取晶状态。",
     )
 
     options = [
@@ -2414,6 +2426,13 @@ def crack_diagnosis():
                     "降温速率": p.get("cooling_rate"),
                     "生长时间": p.get("growth_hours"),
                     "pH": p.get("ph"),
+                    "生长阶段": p.get("growth_stage", ""),
+                    "阶段尺寸": p.get("stage_end_size_mm"),
+                    "转速": p.get("rotation_rpm"),
+                    "白纹": p.get("white_striation", ""),
+                    "白纹密度": p.get("white_density_grade", ""),
+                    "串丝": p.get("hair_inclusion", ""),
+                    "串丝数量": p.get("hair_count"),
                     "固定方式": p.get("fixation", ""),
                     "籽晶取向": p.get("seed_orientation", ""),
                     "籽晶质量": p.get("seed_quality", ""),
@@ -2434,6 +2453,9 @@ def crack_diagnosis():
             ("过饱和度", "过饱和度"),
             ("降温速率", "降温速率"),
             ("生长时间", "生长时间"),
+            ("阶段尺寸", "阶段结束特征尺寸"),
+            ("转速", "转速"),
+            ("串丝数量", "串丝数量"),
             ("pH", "pH"),
         ]:
             if col not in labelled.columns:
@@ -2594,9 +2616,9 @@ def crack_diagnosis():
     evidence = search_papers(
         df,
         (
-            phenomenon
-            + " KDP crack thermal stress inclusion dislocation "
-              "supersaturation seed defect cooling"
+            phenomenon_kind + " " + phenomenon
+            + " KDP large scale crystal growth mass transfer surface supersaturation "
+              "hair inclusion growth striation crack thermal stress dislocation"
         ),
         18,
         "KDP主线",
@@ -2640,7 +2662,7 @@ def crack_diagnosis():
                 expanded=False,
             ):
                 answer, sources = run_agent(
-                    phenomenon or "诊断 KDP 晶体开裂原因",
+                    (phenomenon_kind + "｜" + phenomenon) if phenomenon else ("诊断KDP" + phenomenon_kind),
                     evidence,
                     "实验诊断",
                     "\n".join(extra_lines),
@@ -2661,12 +2683,13 @@ def crack_diagnosis():
     if st.button("保存本次诊断到当前研究项目"):
         add_item(
             "diagnosis",
-            (phenomenon[:70] if phenomenon else "KDP开裂诊断") + ("…" if len(phenomenon) > 70 else ""),
+            ((phenomenon_kind + "｜" + phenomenon[:55]) if phenomenon else ("KDP" + phenomenon_kind + "诊断")) + ("…" if len(phenomenon) > 55 else ""),
             "；".join(
                 f"{r['变量']}={r['风险']}"
                 for _, r in result.head(5).iterrows()
             ),
             {
+                "phenomenon_type": phenomenon_kind,
                 "phenomenon": phenomenon,
                 "risk_table": result.to_dict("records"),
                 "evidence_support": support.to_dict("records") if len(support) else [],
@@ -2679,17 +2702,28 @@ def crack_diagnosis():
 def experiment_design():
     page_header(
         "对照实验设计",
-        "把复杂开裂问题拆成可证伪的单变量实验：基线、实验组、关键指标、支持判据、否证判据和记录要求一次给全。",
+        "把大尺寸尺度效应、白纹/串丝和开裂问题拆成可证伪实验：基线、单变量、尺寸阶段、关键指标、支持与否证判据一次给全。",
         "EXPERIMENT DESIGN",
     )
 
     project_context_strip()
 
     with st.container(border=True):
+        design_mode = st.selectbox(
+            "实验问题类型",
+            ["大尺寸尺度效应", "白纹/串丝形成", "开裂与取晶冷却", "自定义"],
+            key="experiment_design_mode",
+        )
+        defaults = {
+            "大尺寸尺度效应": ["晶体尺寸/生长阶段", "晶体旋转/流场", "传质/表面过饱和度均匀性"],
+            "白纹/串丝形成": ["过饱和度", "晶体旋转/流场", "生长温度稳定性", "溶液杂质/纯度"],
+            "开裂与取晶冷却": ["晶体尺寸/生长阶段", "降温速率", "籽晶固定方式", "出炉/取晶冷却"],
+            "自定义": ["过饱和度"],
+        }
         selected = st.multiselect(
             "准备验证的变量",
             list(VARIABLES),
-            default=["降温速率", "籽晶固定方式", "过饱和度"],
+            default=defaults[design_mode],
         )
 
         baseline_default = ""
@@ -2786,7 +2820,7 @@ def theory():
     df = _df()
     page_header(
         "理论计算规划与分析",
-        "面向KDP缺陷、电子结构与开裂机制研究，组织模型构建、参数选择、收敛验证、计算任务、结果解析及文献/实验对照；数值求解由QE、VASP、LAMMPS、COMSOL等专业软件完成。",
+        "面向大尺寸KDP生长尺度效应、流场传质、白纹/串丝、热应力与原子缺陷研究，组织模型构建、参数选择、收敛验证、结果解析及文献/实验对照；数值求解由CFD/FEA/DFT/MD专业软件完成。",
         "COMPUTATIONAL PLANNING & ANALYSIS",
     )
     project_context_strip()
@@ -2819,41 +2853,43 @@ def theory():
     )
 
     section_title(
-        "示例工作流｜KDP氢空位缺陷态",
-        "从科学问题到缺陷模型、数值求解和结果验证的完整计算链",
+        "当前优先工作流｜大尺寸KDP尺度效应",
+        "从晶体尺寸、流场传质到缺陷空间分布和热—力开裂的多尺度计算链",
     )
     st.markdown(
         """
-**科学问题** → **KDP缺陷计算文献** → **完美晶体/缺陷模型** → **结构优化与收敛测试**
-→ **SCF / DOS / PDOS** → **缺陷态识别** → **完美晶体—缺陷晶体比较**
-→ **与实验光学/吸收结果对照**
+**科学问题** → **小/中/大晶体真实几何** → **CFD流场/传质/表面过饱和度**
+→ **白纹/串丝/包裹体空间地图共定位** → **取晶/冷却FEA温度—应力场**
+→ **必要时DFT/MD解释原子或微观机制** → **与真实实验和物性参数交叉验证**
 
-数值计算由所选专业求解器执行；平台负责研究问题、方法依据、任务状态、验证结果与项目记忆的统一管理。
+数值求解由专业软件完成；平台负责把模型依据、材料参数、边界条件、收敛验证和实验结果持续关联起来。
 """
     )
 
     with st.container(border=True):
         c1, c2, c3 = st.columns([1, 1, 1.2])
-        method = c1.selectbox("计算类型", ["DFT/第一性原理", "分子动力学 MD", "有限元 FEA"])
+        method = c1.selectbox("计算类型", ["CFD/流场与传质", "有限元 FEA", "DFT/第一性原理", "分子动力学 MD"])
         target = c2.selectbox(
             "研究对象",
             [
-                "氢空位", "钾空位", "氧/磷酸根缺陷", "杂质/掺杂", "缺陷复合体",
-                "包裹体附近应力", "加工亚表面损伤", "裂纹萌生", "热应力场",
-                "籽晶/固定约束", "同位素对照（扩展）",
+                "大尺寸晶体尺度效应", "流场/涡流", "表面过饱和度均匀性", "白纹/生长条纹形成",
+                "串丝/发丝状包裹体形成", "取晶/冷却热应力", "包裹体附近应力", "裂纹萌生",
+                "籽晶/固定约束", "氢空位", "钾空位", "氧/磷酸根缺陷", "杂质/掺杂", "缺陷复合体",
+                "加工亚表面损伤", "同位素对照（扩展）",
             ],
         )
         software_map = {
+            "CFD/流场与传质": ["COMSOL", "ANSYS Fluent", "OpenFOAM", "Python后处理"],
+            "有限元 FEA": ["COMSOL", "ANSYS", "Python后处理"],
             "DFT/第一性原理": ["Quantum ESPRESSO", "VASP", "Materials Studio (CASTEP)", "Gaussian（簇模型/局域模型）"],
             "分子动力学 MD": ["LAMMPS", "Materials Studio (Forcite)", "Python后处理"],
-            "有限元 FEA": ["COMSOL", "ANSYS", "Python后处理"],
         }
         software = c3.selectbox("主要软件/求解器", software_map[method])
         active_project = get_active_project()
         goal = st.text_area(
             "研究目标",
             value="" if not active_project else active_project.get("question", ""),
-            placeholder="例如：比较不同氢空位位置与电荷态对缺陷态和光学响应的影响。",
+            placeholder="例如：比较小/中/大尺寸晶体在相同体相过饱和度和转速下的表面过饱和度分布，并与白纹/串丝空间位置共定位。",
         )
 
     if "Gaussian" in software and method == "DFT/第一性原理":
@@ -2863,6 +2899,13 @@ def theory():
         )
 
     workflows = {
+        "CFD/流场与传质": [
+            ("1. 真实几何与工况", "生长槽/晶体几何 → 小/中/大尺寸 → 转速/换向/循环 → 溶液温度与物性"),
+            ("2. 物理场", "流动 + 溶质传输；按问题加入自然对流/热传递 → 明确体相与表面过饱和度定义"),
+            ("3. 网格与时间", "边界层网格 → 网格无关性 → 周期/瞬态统计窗口 → 湍流模型或层流假设验证"),
+            ("4. 关键输出", "速度/涡流 → 壁面剪切 → 表面过饱和度均值/标准差/低值区 → 尺度对比"),
+            ("5. 缺陷共定位", "将白纹/串丝/包裹体空间坐标与局部低过饱和度、涡流和波动区域对应；相关不自动等于因果"),
+        ],
         "DFT/第一性原理": [
             ("1. 完美晶体基准", "CIF核对 → 晶格/原子位置 → 截断能与k点收敛 → 结构优化"),
             ("2. 缺陷模型", "建立超胞 → 枚举缺陷位置/电荷态 → 检查缺陷间相互作用 → 结构弛豫"),
@@ -2879,7 +2922,7 @@ def theory():
         ],
         "有限元 FEA": [
             ("1. 材料参数", "各向异性弹性、热膨胀、导热、密度等参数必须可追溯"),
-            ("2. 几何与边界", "真实晶体尺寸 → 籽晶/夹持 → 温度/浓度边界 → 接触与约束"),
+            ("2. 几何与边界", "真实小/中/大晶体尺寸 → 籽晶/夹持 → 取晶/冷却温度边界 → 接触与约束"),
             ("3. 网格与求解", "网格无关性 → 时间步/稳态选择 → 多物理场耦合假设"),
             ("4. 场与危险区", "主应力、应变能、温度梯度、局部应力集中与裂纹危险区域"),
             ("5. 空间验证", "与真实裂纹起点/方向、固定位置和实验温度过程做共定位验证"),
@@ -2927,10 +2970,21 @@ def theory():
             ("可复现", "脚本版本、输入文件和输出图表一起归档"),
         ],
         "COMSOL": [
-            ("几何/材料", "真实尺寸 + 各向异性材料参数 + 参数来源"),
-            ("物理场", "Heat Transfer + Solid Mechanics；按问题决定是否增加传质/接触"),
-            ("边界条件", "温度过程、夹持、对流/接触必须来自真实实验或有依据的假设"),
-            ("验证", "网格无关性 + 参数敏感性 + 裂纹起点空间共定位"),
+            ("几何/材料", "按问题建立真实生长槽/晶体尺寸；热—力模型使用各向异性材料参数与材料坐标系"),
+            ("CFD/传质", "Laminar/Turbulent Flow + Transport of Diluted Species；必要时加入Heat Transfer与旋转域/移动壁面"),
+            ("热—力", "Heat Transfer + Solid Mechanics；取晶/冷却使用真实温度过程、夹持、接触与对流边界"),
+            ("验证", "网格无关性 + 时间步/模型敏感性 + 表面过饱和度/裂纹起点/缺陷空间共定位"),
+        ],
+        "ANSYS Fluent": [
+            ("几何/网格", "真实槽体与晶体尺寸；晶面附近边界层网格必须单独检查"),
+            ("物理模型", "流动 + Species/UDS传质；按实际工况决定自然对流和湍流模型"),
+            ("边界条件", "转速/换向、入口/出口、温度、体相浓度与晶面溶质消耗模型需可追溯"),
+            ("结果", "速度/涡量/壁面剪切/表面浓度或过饱和度；做时间平均与空间均匀性统计"),
+        ],
+        "OpenFOAM": [
+            ("求解器选择", "根据不可压缩流、传热和组分传输需求选择/扩展求解器"),
+            ("运动边界", "旋转/换向与动态网格或MRF近似必须说明适用边界"),
+            ("验证", "网格、时间步、传质边界条件和湍流模型做敏感性检查"),
         ],
         "ANSYS": [
             ("模型", "几何、材料坐标系、各向异性参数与约束"),
@@ -3284,17 +3338,20 @@ def reports():
 
     templates = [
         "组会专题汇报",
+        "大尺寸尺度效应阶段报告",
+        "白纹/串丝缺陷专题",
         "专题文献调研",
         "开题方向论证",
+        "物性测试与热-力模型方案",
         "理论计算方案总结",
-        "开裂诊断报告",
+        "缺陷与开裂诊断报告",
     ]
 
     with st.container(border=True):
         kind = st.radio("报告类型", templates, horizontal=True)
         c1, c2 = st.columns([1, 1.5])
         topic = c1.selectbox("主题", list(CORE_TOPICS))
-        extra = c2.text_area("额外要求", height=92, placeholder="例如：突出开裂机理与后续两周实验计划。")
+        extra = c2.text_area("额外要求", height=92, placeholder="例如：突出小—中—大尺寸对照、白纹/串丝空间分布、CFD验证与后续两周实验计划。")
 
     evidence = topic_search(df, topic, 20, "KDP主线")
     section_title("报告证据集", "报告会优先引用以下相关文献")

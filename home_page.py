@@ -148,6 +148,7 @@ def home_page():
 div[data-testid="stPageLink"] a{min-height:42px;border-radius:7px!important;border:1px solid rgba(24,68,105,.10)!important;background:#FCFCFA!important;color:#2A485F!important;box-shadow:none!important;transition:all .15s ease}div[data-testid="stPageLink"] a:hover{transform:translateX(3px);border-color:rgba(20,90,159,.30)!important;background:#F3F8FA!important}
 .research-loop{display:grid;grid-template-columns:repeat(6,1fr);border-top:1px solid rgba(24,68,105,.13);border-bottom:1px solid rgba(24,68,105,.13);background:#F8F8F5}.loop-cell{padding:17px 14px;min-height:101px;border-right:1px solid rgba(24,68,105,.08)}.loop-cell:last-child{border-right:none}.loop-no{font-size:8px;font-weight:900;letter-spacing:.12em;color:#A1ADB7}.loop-title{margin-top:9px;font-size:13px;font-weight:850;color:#1D3E57}.loop-note{margin-top:5px;font-size:10px;line-height:1.45;color:#7C8D9A}
 .data-boundary{margin-top:6px;padding:13px 15px;border-left:3px solid #6E6AB7;background:rgba(110,106,183,.035);color:#6F7F8D;font-size:10px;line-height:1.65}
+.focus-line{display:grid;grid-template-columns:repeat(6,1fr);margin:17px 0 6px;border-top:1px solid rgba(24,68,105,.13);border-bottom:1px solid rgba(24,68,105,.13);background:#FBFCFA}.focus-cell{padding:14px 12px;border-right:1px solid rgba(24,68,105,.08)}.focus-cell:last-child{border-right:none}.focus-k{font-size:8px;letter-spacing:.12em;font-weight:900;color:#94A3AF}.focus-v{font-size:11px;font-weight:820;color:#294B64;margin-top:5px}.focus-q{margin-top:12px;padding:12px 14px;background:#F4F8FA;border-left:3px solid #145A9F;color:#496779;font-size:11px;line-height:1.65}
 @media(max-width:1250px){.home-title{font-size:42px}.state-strip{grid-template-columns:repeat(2,1fr)}.research-loop{grid-template-columns:repeat(3,1fr)}}
 </style>
         """,
@@ -160,10 +161,10 @@ div[data-testid="stPageLink"] a{min-height:42px;border-radius:7px!important;bord
             st.markdown(
                 f"""
 <div class="home-shell">
-  <div class="home-eyebrow">KDP 晶体生长 · 缺陷 · 开裂</div>
-  <div class="home-title">KDP晶体缺陷与开裂<br><span>研究工作台</span></div>
-  <div class="home-deck">面向水溶液法生长KDP晶体，围绕生长条件、原生缺陷、局部应力与裂纹萌生，统一管理文献证据、实验记录、计算任务与阶段判断。</div>
-  <div class="home-objective"><b>研究链：</b> 文献依据 → 科学假设 → 实验检验 → 理论验证 → 下一轮研究决策。平台负责把各环节的证据和记录持续关联起来。</div>
+  <div class="home-eyebrow">大尺寸 KDP · 生长尺度效应 · 缺陷演化</div>
+  <div class="home-title">大尺寸KDP晶体<br><span>生长与缺陷研究工作台</span></div>
+  <div class="home-deck">以“小晶体 → 大晶体”的尺度放大为主线，研究流场、传质、表面过饱和度和温度场如何共同改变生长界面，并追踪白纹、串丝、包裹体与开裂的演化。</div>
+  <div class="home-objective"><b>核心问题：</b> 名义工艺相同，并不意味着不同尺寸晶体经历相同的局部生长环境。平台围绕“尺度 → 局部场 → 界面 → 缺陷 → 应力/开裂 → 工艺优化”持续组织证据和实验。</div>
   <div class="home-axis">
     <div class="home-axis-cell"><div class="home-axis-no">01</div><div class="home-axis-name">证据</div></div>
     <div class="home-axis-cell"><div class="home-axis-no">02</div><div class="home-axis-name">假设</div></div>
@@ -191,46 +192,65 @@ div[data-testid="stPageLink"] a{min-height:42px;border-radius:7px!important;bord
         unsafe_allow_html=True,
     )
 
+    section_title("当前研究主线", "把导师关心的大尺寸生长问题放到平台最前面")
+    st.markdown(
+        """
+<div class="focus-line">
+  <div class="focus-cell"><div class="focus-k">01 · 尺度</div><div class="focus-v">小 → 中 → 大晶体</div></div>
+  <div class="focus-cell"><div class="focus-k">02 · 局部场</div><div class="focus-v">流场 / 传质 / 温度场</div></div>
+  <div class="focus-cell"><div class="focus-k">03 · 界面</div><div class="focus-v">台阶 / 位错 / 成核</div></div>
+  <div class="focus-cell"><div class="focus-k">04 · 缺陷</div><div class="focus-v">白纹 / 串丝 / 包裹体</div></div>
+  <div class="focus-cell"><div class="focus-k">05 · 力学</div><div class="focus-v">热应变 / 局部应力</div></div>
+  <div class="focus-cell"><div class="focus-k">06 · 结果</div><div class="focus-v">开裂 / 工艺优化</div></div>
+</div>
+<div class="focus-q"><b>工作假设：</b>外部设定参数相同并不保证表面局部环境相同。真正要验证的是：尺寸变化从哪个阶段开始显著改变局部场，这些变化又是否与白纹、串丝和开裂在空间与时间上对应。</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     section_title("研究模块", "按当前科研任务直接进入；站内切换保留当前项目上下文")
 
     row1 = st.columns(4, gap="medium")
     with row1[0]:
-        _entry_group("项目与总览", "查看研究状态与项目记忆", [
-            ("overview", "科研驾驶舱", ":material/dashboard:", "查看当前研究状态、证据和专题概览"),
-            ("project", "研究总控台", ":material/account_tree:", "管理项目问题、假设与研究记忆"),
+        _entry_group("理论基础", "先把KDP和大尺寸生长的物理语言建立起来", [
+            ("learn", "KDP理论基础学习", ":material/menu_book:", "从晶体学、过饱和度、传质、缺陷到开裂系统学习"),
+            ("scale", "大尺寸尺度效应研究", ":material/straighten:", "设计小—中—大尺寸双轨对照并理解相似性"),
         ])
     with row1[1]:
-        _entry_group("文献与知识", "从证据进入", [
+        _entry_group("文献与知识", "从原始证据进入", [
             ("literature", "文献中心", ":material/library_books:", "检索、筛选和沉淀KDP文献证据"),
             ("knowledge", "知识图谱", ":material/hub:", "查看来源—机制—结果—具体论文证据网络"),
-            ("topics", "专题调研", ":material/travel_explore:", "围绕具体研究问题形成专题调研"),
+            ("topics", "专题调研", ":material/travel_explore:", "围绕白纹、串丝、尺度效应等问题形成专题调研"),
             ("compare", "多文献比较", ":material/compare_arrows:", "比较多篇论文的方法、证据与结论"),
         ])
     with row1[2]:
-        _entry_group("实验与验证", "从现象和变量进入", [
-            ("diagnosis", "开裂诊断", ":material/crisis_alert:", "排查开裂变量并结合历史实验"),
-            ("experiment", "对照实验设计", ":material/fact_check:", "把假设转化为可证伪实验"),
-            ("experiment_log", "实验记录与数据积累", ":material/database:", "记录真实实验并为后续机器学习积累数据"),
+        _entry_group("实验与缺陷", "从真实晶体和生长过程进入", [
+            ("diagnosis", "缺陷与开裂诊断", ":material/crisis_alert:", "排查尺寸、流场、过饱和度、冷却和缺陷变量"),
+            ("experiment", "对照实验设计", ":material/fact_check:", "把尺度效应和缺陷假设转化为可证伪实验"),
+            ("experiment_log", "实验记录与数据积累", ":material/database:", "记录白纹、串丝、尺寸阶段和开裂时序"),
         ])
     with row1[3]:
-        _entry_group("理论与机理", "从机制问题进入", [
-            ("theory", "理论计算规划与分析", ":material/science:", "规划DFT / MD / FEA并回填结果"),
-            ("gaps", "研究空白", ":material/lightbulb:", "识别证据薄弱区与待核科学问题"),
+        _entry_group("物性与计算", "从参数和机制验证进入", [
+            ("properties", "物性参数与测试", ":material/biotech:", "规划热膨胀、导热、弹性、强度和断裂韧性测试"),
+            ("theory", "理论计算规划与分析", ":material/science:", "规划CFD / FEA / DFT / MD并回填结果"),
+            ("gaps", "研究空白", ":material/lightbulb:", "识别证据薄弱区与待验证机制"),
         ])
 
     row2 = st.columns(3, gap="medium")
     with row2[0]:
-        _entry_group("方向与分析", "形成研究判断", [
+        _entry_group("项目与方向", "形成持续研究判断", [
+            ("overview", "科研驾驶舱", ":material/dashboard:", "查看当前研究状态、证据和主线"),
+            ("project", "研究总控台", ":material/account_tree:", "管理科学问题、假设和研究记忆"),
             ("direction", "研究方向决策", ":material/explore:", "形成候选课题与阶段路线"),
-            ("ai", "AI科研助手", ":material/forum:", "结合项目记忆开展证据整合与科研分析"),
         ])
     with row2[1]:
-        _entry_group("成果与复盘", "沉淀阶段结果", [
+        _entry_group("分析与输出", "把证据转化为科研产出", [
+            ("ai", "AI科研助手", ":material/forum:", "结合项目记忆开展证据整合与科研分析"),
             ("reports", "报告中心", ":material/description:", "生成阶段报告与汇报材料"),
             ("audit", "数据审计", ":material/monitor_heart:", "检查证据、分类和项目记录完整性"),
         ])
     with row2[2]:
-        st.markdown('<div class="data-boundary"><b>数据边界：</b> 文献与普通项目记忆可参与智能分析；受保护实验原始数据由实验保险库单独控制。</div>', unsafe_allow_html=True)
+        st.markdown('<div class="data-boundary"><b>数据边界：</b> 文献与普通项目记忆可参与智能分析；受保护实验原始数据由实验保险库单独控制。真实白纹、串丝、晶体尺寸和工艺参数默认不自动发送给外部AI。</div>', unsafe_allow_html=True)
 
     section_title("研究闭环", "文献、实验和理论验证共同服务于同一个科学问题")
     st.markdown(
@@ -239,7 +259,7 @@ div[data-testid="stPageLink"] a{min-height:42px;border-radius:7px!important;bord
   <div class="loop-cell"><div class="loop-no">01 · 证据</div><div class="loop-title">建立依据</div><div class="loop-note">核心论文、方法、共识与争议</div></div>
   <div class="loop-cell"><div class="loop-no">02 · 假设</div><div class="loop-title">形成问题</div><div class="loop-note">把现象转成可验证、可否证假设</div></div>
   <div class="loop-cell"><div class="loop-no">03 · 实验</div><div class="loop-title">对照检验</div><div class="loop-note">真实条件、失败与结果连续积累</div></div>
-  <div class="loop-cell"><div class="loop-no">04 · 计算</div><div class="loop-title">机制验证</div><div class="loop-note">DFT / MD / FEA解释局部过程</div></div>
+  <div class="loop-cell"><div class="loop-no">04 · 计算</div><div class="loop-title">机制验证</div><div class="loop-note">CFD / FEA / DFT / MD解释局部过程</div></div>
   <div class="loop-cell"><div class="loop-no">05 · 综合</div><div class="loop-title">交叉判断</div><div class="loop-note">比较文献、实验和计算是否一致</div></div>
   <div class="loop-cell"><div class="loop-no">06 · 迭代</div><div class="loop-title">下一轮研究</div><div class="loop-note">更新假设并规划实验、表征与计算</div></div>
 </div>
