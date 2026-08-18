@@ -1,193 +1,163 @@
 from __future__ import annotations
 
-import re
-
 import pandas as pd
 import streamlit as st
 
 from theory_knowledge import CHAPTERS, GLOSSARY, LEARNING_PATH, QUIZ, REFERENCES
-from ui import COLORS, page_header, section_title, soft_note
+from ui import page_header, section_title, soft_note
 
 
 def _chapter_map():
     return {x["title"]: x for x in CHAPTERS}
 
 
-def _render_path():
+def _jump_to(title: str):
+    st.session_state["theory_selected_chapter"] = title
+    st.session_state["theory_view"] = "章节学习"
+
+
+def _start_here():
+    st.markdown("### 零基础先从这里开始")
     st.markdown(
-        """
-<style>
-.learn-path{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:6px 0 20px}.learn-stage{background:#fff;border-top:3px solid #1359A6;border-bottom:1px solid #DCE5EC;padding:16px 15px;min-height:185px}.learn-stage-no{font-size:9px;letter-spacing:.14em;font-weight:900;color:#7A8D9C}.learn-stage-title{font-size:14px;font-weight:850;color:#173A55;margin:7px 0 6px}.learn-stage-goal{font-size:11px;line-height:1.65;color:#687C8D}.learn-stage-check{margin-top:11px;padding-top:9px;border-top:1px solid #E7EDF2;font-size:10px;line-height:1.55;color:#16877F;font-weight:650}
-.concept-line{display:grid;grid-template-columns:repeat(7,1fr);border-top:1px solid #DCE5EC;border-bottom:1px solid #DCE5EC;background:#F8FAFB;margin:8px 0 18px}.concept-cell{padding:13px 10px;border-right:1px solid #E3E9EE;text-align:center}.concept-cell:last-child{border-right:none}.concept-k{font-size:9px;color:#8A99A6}.concept-v{font-size:11px;font-weight:800;color:#244A65;margin-top:4px}.learn-note{border-left:3px solid #0E9AA7;background:#F5FAFA;padding:12px 14px;font-size:11px;line-height:1.7;color:#47677A;margin:10px 0 16px}
-@media(max-width:1150px){.learn-path{grid-template-columns:repeat(2,1fr)}.concept-line{grid-template-columns:repeat(2,1fr)}}
-</style>
-        """,
-        unsafe_allow_html=True,
+        "你不需要一次学完所有固体物理。对现在的大尺寸 KDP 课题，先把下面这条链真正弄懂：**晶体是什么 → 怎么从水溶液长出来 → 为什么尺寸变大会改变局部环境 → 缺陷怎么形成 → 为什么会产生热应力和开裂。**"
     )
-    cards = []
-    for idx, stage in enumerate(LEARNING_PATH, 1):
-        cards.append(
-            f'<div class="learn-stage"><div class="learn-stage-no">0{idx}</div>'
-            f'<div class="learn-stage-title">{stage["stage"]}</div>'
-            f'<div class="learn-stage-goal">{stage["goal"]}<br><br><b>章节：</b>{" / ".join(stage["chapters"])}</div>'
-            f'<div class="learn-stage-check">学完能做到：{stage["checkpoint"]}</div></div>'
-        )
-    st.markdown('<div class="learn-path">' + ''.join(cards) + '</div>', unsafe_allow_html=True)
-    st.markdown(
-        """
-<div class="concept-line">
-  <div class="concept-cell"><div class="concept-k">工艺</div><div class="concept-v">温度 / 过饱和度 / 旋转</div></div>
-  <div class="concept-cell"><div class="concept-k">尺度</div><div class="concept-v">小 → 中 → 大</div></div>
-  <div class="concept-cell"><div class="concept-k">局部场</div><div class="concept-v">流场 / 传质 / 温度场</div></div>
-  <div class="concept-cell"><div class="concept-k">界面</div><div class="concept-v">台阶 / 位错 / 成核</div></div>
-  <div class="concept-cell"><div class="concept-k">缺陷</div><div class="concept-v">白纹 / 串丝 / 包裹体</div></div>
-  <div class="concept-cell"><div class="concept-k">力学</div><div class="concept-v">热应变 / 应力集中</div></div>
-  <div class="concept-cell"><div class="concept-k">结果</div><div class="concept-v">开裂 / 工艺优化</div></div>
-</div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("#### 四个学习阶段")
+    for i, stage in enumerate(LEARNING_PATH,1):
+        with st.expander(f"第 {i} 阶段｜{stage['stage']}", expanded=i==1):
+            st.write(stage["goal"])
+            st.markdown("**要学的章节**")
+            for x in stage["chapters"]:
+                st.markdown(f"- {x}")
+            st.caption("学完检查："+stage["checkpoint"])
+    first=LEARNING_PATH[0]["chapters"][0]
+    if st.button("从第 1 章开始学",type="primary",key="start_theory_first"):
+        _jump_to(first)
+        st.rerun()
+    soft_note("建议学习方式：每次只学一章。学完后用本页的‘基础自测’检查概念，再去看对应文献或做实验。")
 
 
 def _render_chapter(ch):
-    st.markdown(f"### {ch['title']}")
+    st.markdown(f"## {ch['title']}")
     st.caption(ch["subtitle"])
-
     with st.container(border=True):
-        st.markdown("**这一章先记住**")
+        st.markdown("**这一章学完，你至少要记住：**")
         for item in ch["remember"]:
             st.markdown(f"- {item}")
 
-    for sec in ch["sections"]:
-        st.markdown(f"#### {sec['heading']}")
+    for idx, sec in enumerate(ch["sections"],1):
+        st.markdown(f"### {idx}. {sec['heading']}")
         st.markdown(sec["body"])
 
     if ch["equations"]:
-        section_title("核心公式", "先理解每个符号对应的物理过程，再进入数值计算")
+        section_title("公式怎么理解", "先知道公式在描述什么，再记符号")
         for eq in ch["equations"]:
-            with st.container(border=True):
-                st.markdown(f"**{eq['name']}**")
+            with st.expander(eq["name"], expanded=True):
                 st.latex(eq["latex"])
                 st.markdown(eq["explain"])
-                st.caption("在当前课题中的用途：" + eq["use"])
+                st.info("**在你的 KDP 研究里用来做什么：** " + eq["use"])
 
-    c1, c2 = st.columns(2, gap="large")
+    c1,c2=st.columns(2,gap="large")
     with c1:
-        st.markdown("#### 容易犯的错误")
-        for x in ch["pitfalls"]:
-            st.markdown(f"- {x}")
+        st.markdown("### 最容易搞错的地方")
+        for x in ch["pitfalls"]: st.markdown(f"- {x}")
     with c2:
-        st.markdown("#### 与当前大尺寸KDP研究的连接")
+        st.markdown("### 和现在课题怎么连接")
         st.markdown(ch["research_link"])
-        st.caption("关键词：" + " · ".join(ch["keywords"]))
+        st.caption("关键词："+" · ".join(ch["keywords"]))
 
     if ch["refs"]:
-        with st.expander("本章核心原始文献", expanded=False):
+        with st.expander("本章核心原始文献（需要时再打开）",expanded=False):
             for rid in ch["refs"]:
-                ref = REFERENCES.get(rid)
-                if not ref:
-                    continue
-                st.markdown(f"**{ref['title']}**")
-                st.caption(f"{ref['journal']}｜{ref['why']}")
-                st.link_button("打开原始来源", ref["url"], key=f"ref_{ch['id']}_{rid}")
+                ref=REFERENCES.get(rid)
+                if ref:
+                    st.markdown(f"**{ref['title']}**")
+                    st.caption(f"{ref['journal']}｜{ref['why']}")
+                    st.link_button("打开原始来源",ref["url"],key=f"theory_ref_{ch['id']}_{rid}")
 
 
-def _search_view(term: str):
-    term = term.strip().lower()
-    if not term:
-        return []
-    out = []
-    for ch in CHAPTERS:
-        blob = " ".join([
-            ch["title"], ch["subtitle"], " ".join(ch["remember"]),
-            " ".join(x["heading"] + " " + x["body"] for x in ch["sections"]),
-            " ".join(ch["keywords"]),
-        ]).lower()
-        if term in blob:
-            out.append(ch)
-    return out
+def _chapter_directory():
+    st.markdown("### 课程目录")
+    st.caption("点击‘学习这一章’才会进入正文，不再让你面对一个不知道怎么选的长下拉框。")
+    cmap=_chapter_map()
+    titles=list(cmap)
+    for i in range(0,len(titles),3):
+        cols=st.columns(3,gap="medium")
+        for col,title in zip(cols,titles[i:i+3]):
+            ch=cmap[title]
+            with col:
+                with st.container(border=True):
+                    st.caption(f"第 {titles.index(title)+1:02d} 章")
+                    st.markdown(f"**{title}**")
+                    st.write(ch["subtitle"])
+                    if st.button("学习这一章",key=f"learn_{ch['id']}",use_container_width=True):
+                        _jump_to(title)
+                        st.rerun()
+
+
+def _chapter_learning():
+    cmap=_chapter_map()
+    selected=st.session_state.get("theory_selected_chapter",list(cmap)[0])
+    titles=list(cmap)
+    if selected not in cmap: selected=titles[0]
+    idx=titles.index(selected)
+    cprev,cmid,cnext=st.columns([1,3,1])
+    with cprev:
+        if idx>0 and st.button("← 上一章",use_container_width=True):
+            st.session_state["theory_selected_chapter"]=titles[idx-1]; st.rerun()
+    with cmid:
+        selected=st.selectbox("当前章节",titles,index=idx,key="theory_chapter_select")
+        st.session_state["theory_selected_chapter"]=selected
+    with cnext:
+        if idx<len(titles)-1 and st.button("下一章 →",use_container_width=True):
+            st.session_state["theory_selected_chapter"]=titles[idx+1]; st.rerun()
+    _render_chapter(cmap[selected])
 
 
 def _glossary():
-    term = st.text_input("搜索术语", placeholder="例如：白纹、Re、(200)、断裂韧性、表面过饱和度")
-    rows = GLOSSARY
+    st.markdown("### 术语词典")
+    term=st.text_input("输入你不懂的词",placeholder="例如：白纹、串丝、[110]、(200)、Re、LFA、断裂韧性")
+    rows=GLOSSARY
     if term.strip():
-        key = term.lower().strip()
-        rows = [(a, b) for a, b in GLOSSARY if key in (a + " " + b).lower()]
-    st.dataframe(pd.DataFrame(rows, columns=["术语", "初学者解释"]), width="stretch", hide_index=True, height=560)
+        key=term.lower().strip(); rows=[(a,b) for a,b in GLOSSARY if key in (a+" "+b).lower()]
+    if rows:
+        for a,b in rows[:80]:
+            with st.expander(a,expanded=False): st.write(b)
+    else:
+        st.warning("没有找到直接匹配。可以换一个更基础的关键词。")
 
 
 def _quiz():
-    st.markdown("这一组题不是考试，而是检查你是否已经把几个最容易混淆的概念分开。")
-    answers = []
-    for i, item in enumerate(QUIZ):
-        ans = st.radio(
-            f"{i+1}. {item['q']}",
-            item["options"],
-            key=f"kdp_quiz_{i}",
-            index=None,
-        )
-        answers.append(ans)
-    if st.button("检查答案", type="primary", key="kdp_quiz_check"):
-        score = 0
-        for i, (item, ans) in enumerate(zip(QUIZ, answers)):
-            correct = item["options"][item["answer"]]
-            if ans == correct:
-                score += 1
-                st.success(f"第 {i+1} 题正确：{item['explain']}")
+    st.markdown("### 基础自测")
+    st.caption("不是考试，只检查最容易混淆的概念。")
+    answers=[]
+    for i,item in enumerate(QUIZ):
+        answers.append(st.radio(f"{i+1}. {item['q']}",item["options"],index=None,key=f"kdp_q_{i}"))
+    if st.button("检查答案",type="primary"):
+        score=0
+        for i,(item,ans) in enumerate(zip(QUIZ,answers)):
+            correct=item["options"][item["answer"]]
+            if ans==correct:
+                score+=1; st.success(f"第 {i+1} 题正确。{item['explain']}")
             else:
-                st.error(f"第 {i+1} 题需要再看：正确答案是“{correct}”。{item['explain']}")
-        st.metric("本次自测", f"{score}/{len(QUIZ)}")
+                st.error(f"第 {i+1} 题：正确答案是“{correct}”。{item['explain']}")
+        st.metric("本次得分",f"{score}/{len(QUIZ)}")
 
 
 def theory_learning_page():
     page_header(
-        "KDP理论基础学习",
-        "面向零基础建立完整知识骨架：晶体学 → 水溶液生长 → 流场/传质 → 尺度效应 → 白纹/串丝/包裹体 → 热力学与开裂 → 物性测试 → 多尺度计算。",
-        "KDP THEORY LEARNING",
+        "KDP 理论基础学习｜从零开始",
+        "把你真正会遇到的晶体学、水溶液生长、过饱和度、流场传质、白纹、串丝、热应力、物性测试和多尺度计算按学习顺序讲清楚。",
+        "KDP FUNDAMENTALS",
     )
-
-    st.markdown(
-        '<div class="learn-note"><b>学习原则：</b>这里不按传统教材从抽象公式一路讲，而按你做大尺寸KDP实验真正会遇到的问题组织。每一章都回答“这是什么—为什么重要—怎么测/怎么算—和白纹、串丝、开裂有什么关系”。</div>',
-        unsafe_allow_html=True,
-    )
-
-    mode = st.segmented_control(
-        "学习模式",
-        ["学习路线", "按章节学习", "术语词典", "基础自测"],
-        default="学习路线",
-        key="kdp_learning_mode",
-    )
-
-    if mode == "学习路线":
-        _render_path()
-        section_title("建议顺序", "先把语言和机制链建立起来，再进具体实验和模拟")
-        for idx, stage in enumerate(LEARNING_PATH, 1):
-            with st.expander(stage["stage"], expanded=idx == 1):
-                st.markdown(stage["goal"])
-                for x in stage["chapters"]:
-                    st.markdown(f"- {x}")
-                st.caption("检查点：" + stage["checkpoint"])
-        soft_note("完成四个阶段后，你再去看大尺寸 KDP 生长论文，重点不再是记单个术语，而是能把‘工艺参数—局部场—界面—缺陷—应力—结果’连成一条机制链。")
-        return
-
-    if mode == "术语词典":
-        _glossary()
-        return
-
-    if mode == "基础自测":
-        _quiz()
-        return
-
-    search = st.text_input("在全部理论章节中检索", placeholder="例如：串丝 / 表面过饱和度 / [110] / LFA / COMSOL")
-    cmap = _chapter_map()
-    candidates = list(cmap)
-    if search.strip():
-        hits = _search_view(search)
-        candidates = [x["title"] for x in hits]
-        if not candidates:
-            st.warning("没有找到直接匹配章节。可以换一个更基础的关键词，或到术语词典检索。")
-            return
-
-    chosen = st.selectbox("选择章节", candidates, key="kdp_theory_chapter")
-    _render_chapter(cmap[chosen])
+    if "theory_view" not in st.session_state: st.session_state["theory_view"]="从零开始"
+    choices=["从零开始","课程目录","章节学习","术语词典","基础自测"]
+    current=st.session_state.get("theory_view","从零开始")
+    if current not in choices: current="从零开始"
+    view=st.radio("学习方式",choices,index=choices.index(current),horizontal=True,key="theory_view_radio")
+    st.session_state["theory_view"]=view
+    st.divider()
+    if view=="从零开始": _start_here()
+    elif view=="课程目录": _chapter_directory()
+    elif view=="章节学习": _chapter_learning()
+    elif view=="术语词典": _glossary()
+    else: _quiz()
