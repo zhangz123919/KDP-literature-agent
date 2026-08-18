@@ -62,6 +62,9 @@ DEFAULT_MASTER_CONSTRAINTS = (
     "研究目标以“问题明确、实验可做、计算可验证、结果可发表、毕业风险可控”为原则。"
 )
 
+REPORT_ENGINE_VERSION = "2026-08-19-nonstream-v4"
+
+
 
 def _secret(name, default=None):
     try:
@@ -418,160 +421,125 @@ def _merge_usage(total: dict, current: dict | None) -> dict:
     return total
 
 
-def _stream_deepseek_call(
+def _deepseek_call(
     client,
     model: str,
     messages: list,
     max_tokens: int,
-    thinking_enabled: bool,
+    thinking_enabled: bool = False,
 ):
-    """
-    单次 DeepSeek 流式请求。
-    - 不把网络中断直接抛到页面层；返回已生成文本 + 错误，便于自动续写。
-    - 记录 finish_reason 和 usage。
+    """稳定的非流式 DeepSeek 请求。
+
+    正式报告不再使用 SSE 长流式输出，避免 Streamlit 页面连接/重绘导致“只生成半段、刷新后又从头开始”。
+    每次请求必须完整返回一个章节段，失败时由上层按“缺失章节”重试。
     """
     kwargs = {
         "model": model,
         "messages": messages,
-        "stream": True,
-        "stream_options": {"include_usage": True},
-        "extra_body": {
-            "thinking": {"type": "enabled" if thinking_enabled else "disabled"}
-        },
+        "stream": False,
+        "extra_body": {"thinking": {"type": "enabled" if thinking_enabled else "disabled"}},
         "max_tokens": int(max_tokens),
     }
     if thinking_enabled:
         kwargs["reasoning_effort"] = "high"
 
-    text_parts = []
-    final_usage = None
-    finish_reason = None
-    reasoning_seen = False
-    error = None
-
     try:
         response = client.chat.completions.create(**kwargs)
-        for chunk in response:
-            usage = getattr(chunk, "usage", None)
-            if usage is not None:
-                final_usage = usage
-
-            choices = getattr(chunk, "choices", None)
-            if not choices:
-                continue
-
-            choice = choices[0]
-            fr = getattr(choice, "finish_reason", None)
-            if fr:
-                finish_reason = fr
-
-            delta = choice.delta
-            reasoning = getattr(delta, "reasoning_content", None)
-            content = getattr(delta, "content", None)
-
-            if reasoning and not reasoning_seen:
-                reasoning_seen = True
-                yield {
-                    "type": "reasoning",
-                    "text": "正在比较证据成熟度、研究空白、实验可行性与毕业风险…",
-                }
-
-            if content:
-                text_parts.append(content)
-                yield {"type": "content", "text": content}
-
+        choice = response.choices[0]
+        text = getattr(choice.message, "content", None) or ""
+        finish_reason = getattr(choice, "finish_reason", None)
+        usage = getattr(response, "usage", None)
+        try:
+            usage_summary = record_deepseek_usage(model, usage)
+        except Exception:
+            usage_summary = {}
+        return {
+            "text": text,
+            "usage": usage_summary,
+            "finish_reason": finish_reason,
+            "error": None,
+        }
     except Exception as exc:
-        error = exc
-
-    try:
-        usage_summary = record_deepseek_usage(model, final_usage)
-    except Exception:
-        # 用量统计不能影响正文生成。
-        usage_summary = {}
-    return {
-        "text": "".join(text_parts),
-        "usage": usage_summary,
-        "finish_reason": finish_reason,
-        "error": error,
-    }
-
+        return {
+            "text": "",
+            "usage": {},
+            "finish_reason": None,
+            "error": exc,
+        }
 
 def _formal_report_segments() -> list[tuple[str, str, str]]:
-    """把正式报告拆成4段，避免一次超长流式输出在尾部失败。"""
+    """导师版正式报告：后台4段生成，但用户只需点击一次。
+
+    每段限制篇幅，避免“为了长而长”；最终合并成一份完整报告。
+    每段末尾都要求输出完成标记，程序据此判断是否真正完成。
+    """
     return [
         (
             "A",
-            "研究问题与证据版图",
+            "文献调研总结与核心问题",
             """
-请只生成以下四部分，不要提前写后面的章节：
+请生成以下两部分，总长度控制在1600—2200个中文字符，不要写具体论文逐篇解读：
 # 0. 一页式结论摘要
-导师3分钟内能看懂：当前KDP大尺寸生长缺陷领域的关键问题、最推荐主方向、2个备选方向及选择理由。
+用导师3分钟能读完的方式说明：文献调研目前得到什么认识、研究对象为什么需要收敛、当前最推荐的研究切入点是什么。
 
-# 1. 调研范围、数据基础与可信度
-说明本地数据库、代表证据、外部补充资料的作用；指出哪些结论仍需回查全文。
+# 1. 文献调研总结与核心科学问题
+围绕大尺寸KDP，归纳：生长过程与界面稳定性、典型缺陷（白纹/相位跃变、串丝/液态包裹体、包裹体/位错）、热—力与开裂、实验表征与理论方法。
+只提出3—5个真正需要后续验证的问题，不要把所有方向铺开。
 
-# 2. 面向大尺寸KDP的研究版图
-以“尺寸放大 → 局部场 → 生长界面 → 缺陷 → 热力/开裂”为主轴，重点讨论：
-小/中/大尺寸尺度效应；流场/传质/表面过饱和度；白纹/相位跃变；串丝/液态包裹体；位错/应变；热应力/开裂。
-点缺陷、激光损伤、加工损伤只作为必要支线，不要抢占主线。
-
-# 3. 证据支持的机制链与待验证假设
-建立3—5条“工艺/尺度 → 局部机制 → 缺陷/后果”链条；逐条标明“已有证据”“合理推断”“待验证”。
+本段最后单独输出一行：[[SEGMENT_A_DONE]]
 """,
         ),
         (
             "B",
-            "方法、科学问题与研究空白",
+            "研究主线与硕士课题收敛",
             """
-请只生成以下三部分：
-# 4. 实验—理论协同方法学版图
-必须把每类实验与对应计算配对：宏观/显微/结构/光学/应力表征 ↔ CFD/FEA/必要时DFT或MD。
-明确哪些是当前硕士阶段“必做”、哪些是“可选扩展”。
+请生成以下两部分，总长度控制在1800—2400个中文字符：
+# 2. 研究主线与实验—理论闭环
+以“晶体尺寸/生长阶段 → 局部环境 → 生长界面 → 缺陷 → 性能/开裂”为主线。
+明确实验负责观察和定量什么，理论计算负责解释和预测什么，后续实验如何验证计算；不要把实验和计算写成两条平行线。
 
-# 5. 当前最值得验证的科学问题
-提出5—8个具体、可以通过实验或计算证伪的问题，优先围绕大尺寸尺度效应、白纹/相位跃变、串丝/包裹体、开裂。
+# 3. 硕士阶段主课题与两个备选
+只给1个主课题 + 2个备选。每个写：核心问题、为什么适合研二硕士、最小可行实验、最小可行计算、3个月成败判据、失败后的转向条件。
+优先考虑12个月内可形成阶段成果，不要设计博士级“大而全”课题。
 
-# 6. 真正可成立的研究空白
-每个空白按：已有工作 → 缺的关键证据 → 为什么重要 → 最小验证方法 → 失败风险。
-不要把“论文少”直接当研究空白。
+本段最后单独输出一行：[[SEGMENT_B_DONE]]
 """,
         ),
         (
             "C",
-            "硕士主课题与备选路线",
+            "下一阶段实验、理论计算与机器学习",
             """
-请只生成以下三部分：
-# 7. 硕士候选课题矩阵
-只提出3个课题：1个优先候选 + 2个备选。每个必须包含：
-中文题目、核心科学问题、创新点、实验路线、计算路线、关键测试、3个月成败判据、6—12个月可形成的结果、难度、主要风险、转向条件、支持证据[P#]/[W#]。
-并给出简洁评分表：科学价值、创新潜力、可行性、实验可验证性、计算价值、毕业风险（1—5级）。
+请生成以下两部分，总长度控制在1800—2400个中文字符：
+# 4. 下一阶段实验与测试计划
+从现有样品整理、缺陷空间定位、宏观/显微/结构表征、关键物性参数测试、对照实验五方面给出可执行计划。
+物性参数包括：热膨胀系数、热导率、比热容、密度、弹性模量/弹性常数、泊松比、破坏强度等；强调晶向和温度条件记录。
 
-# 8. 最推荐主课题
-只选1个，说明为什么最适合“即将研二的硕士研究生”，以及最小可行实验、最小可行计算、第一篇阶段论文最可能来自哪里。
+# 5. 理论计算软件学习与机器学习能力建设
+严格结合研究者现有软件：Materials Studio 2020、VESTA、Diamond 5、GaussView/Gaussian、Multiwfn、VMD；通过Xshell连接闽都超算提交任务。
+理论计算先以“学会KDP建模—提交计算—结果分析完整流程”为目标，具体计算内容服从实验问题。
+机器学习是导师明确要求的学习内容：安排Python/VS Code、数据清洗、可视化、相关性分析、回归/分类等基础学习，并说明如何为后续KDP缺陷数据分析服务。
+不要擅自强制加入导师未明确要求的软件路线。
 
-# 9. 两个备选课题与切换条件
-明确什么结果出现时应该从主课题切换，避免到研三才发现主线不可做。
+本段最后单独输出一行：[[SEGMENT_C_DONE]]
 """,
         ),
         (
             "D",
-            "执行计划、核心文献与导师讨论",
+            "时间规划与导师讨论清单",
             """
-请只生成以下三部分：
-# 10. 两周 / 3个月 / 6个月 / 12个月执行路线
-写成真正可执行的时间表。必须体现：文献收口 → 历史样品/生长记录 → 缺陷地图 → 表征 → CFD/FEA → 对照实验 → 模型修正 → 论文输出。
+请生成以下两部分，总长度控制在1600—2200个中文字符：
+# 6. 两周 / 3个月 / 6个月 / 12个月计划
+按照“近期能落地、研二形成主线、为论文和毕业预留时间”的原则列出阶段任务和可交付结果。
 
-# 11. 优先精读论文清单
-从现有证据中选15—20篇最关键论文；给出[P#]/[W#]、题名、年份、DOI（若有）和“为什么现在必须读”。优先2022—2026与大尺寸、流场传质、白纹/串丝、热应力直接相关的工作；经典基础论文可少量保留。
+# 7. 导师讨论清单与优先阅读方向
+列出6—8个需要导师确认的问题，例如：优先研究哪类缺陷、可用样品和历史生长数据、可用测试仪器、理论计算重点、机器学习数据来源、阶段成果判据。
+最后给出“优先阅读方向”，只写主题和筛选标准，不要在正文堆具体文章标题；具体文献放附录来源列表。
 
-# 12. 导师讨论清单
-列出8个下一次与导师必须确认的问题，重点确认：主缺陷选哪一个、现有样品/历史数据、可用表征设备、是否能做尺寸对照、CFD/FEA优先级、第一阶段成果判据。
-
-最后用一个不超过200字的“建议结论”收尾。
+最后用不超过180字的“建议结论”收尾。
+本段最后单独输出一行：[[SEGMENT_D_DONE]]
 """,
         ),
     ]
-
 
 def _common_direction_context(
     stats_text: str,
@@ -628,35 +596,41 @@ def _common_direction_context(
 
 
 def _segment_required_sections(seg_id: str) -> list[str]:
-    """正式报告每段必须出现的章节号；用于防止流式连接提前结束却被误判为完成。"""
     return {
-        "A": ["0", "1", "2", "3"],
-        "B": ["4", "5", "6"],
-        "C": ["7", "8", "9"],
-        "D": ["10", "11", "12"],
+        "A": ["0", "1"],
+        "B": ["2", "3"],
+        "C": ["4", "5"],
+        "D": ["6", "7"],
     }.get(seg_id, [])
 
 
+def _segment_done_marker(seg_id: str) -> str:
+    return f"[[SEGMENT_{seg_id}_DONE]]"
+
+
 def _segment_is_complete(seg_id: str, text: str) -> bool:
-    """不仅看 finish_reason，还检查本段要求的章节是否真的都生成出来。"""
     if not text or not text.strip():
         return False
     for no in _segment_required_sections(seg_id):
-        # 接受 '# 0.' / '## 0 ' / '0. 标题' / '0、标题' 等常见Markdown写法。
-        pat = rf"(?m)^\\s*(?:#{{1,4}}\\s*)?{re.escape(no)}(?:\\.|、|：|:|\\s)"
+        pat = rf"(?m)^\s*(?:#{{1,4}}\s*)?{re.escape(no)}(?:\.|、|：|:|\s)"
         if not re.search(pat, text):
             return False
-    return True
+    return _segment_done_marker(seg_id) in text
 
 
 def _missing_segment_sections(seg_id: str, text: str) -> list[str]:
     missing = []
     for no in _segment_required_sections(seg_id):
-        pat = rf"(?m)^\\s*(?:#{{1,4}}\\s*)?{re.escape(no)}(?:\\.|、|：|:|\\s)"
+        pat = rf"(?m)^\s*(?:#{{1,4}}\s*)?{re.escape(no)}(?:\.|、|：|:|\s)"
         if not re.search(pat, text or ""):
             missing.append(no)
+    if _segment_done_marker(seg_id) not in (text or ""):
+        missing.append("完成标记")
     return missing
 
+
+def _strip_segment_marker(text: str) -> str:
+    return re.sub(r"\[\[SEGMENT_[A-D]_DONE\]\]", "", text or "").strip()
 
 def stream_direction_report(
     df: pd.DataFrame,
@@ -667,11 +641,13 @@ def stream_direction_report(
     quick: bool = False,
     skip_segments: set | None = None,
 ):
-    """
-    稳定版方向报告生成器。
+    """导师汇报稳定版。
 
-    正式模式：4段独立生成 + 单段自动续写/重试 + 失败保留已完成段。
-    快速模式：单次短报告，用于低成本验证链路。
+    关键变化：
+    1) 正式报告改为非流式请求，避免 SSE/浏览器连接中断导致半段正文；
+    2) 用户仍只点击一次，后台顺序生成A—D四段；
+    3) 每段只有通过章节+完成标记校验后才展示/保存；
+    4) 若某段不完整，只请求“缺失章节”，绝不再从该段开头重复生成。
     """
     enforce_ai_quota()
 
@@ -681,70 +657,51 @@ def stream_direction_report(
     resume_mode = skip_segments is not None
     if not resume_mode:
         guard_duplicate_ai_request(
-            f"direction-v2|{focus}|{constraints}|{horizon}|{theory_weight}|{quick}",
-            window_seconds=25,
+            f"direction-v4|{focus}|{constraints}|{horizon}|{theory_weight}|{quick}",
+            window_seconds=20,
         )
 
-    yield {"type": "stage", "text": "正在扫描KDP主研究文献，并构建大尺寸生长缺陷证据包…"}
+    yield {"type": "stage", "text": "正在扫描KDP主研究文献并构建代表证据包…"}
     stats = _topic_snapshot(df)
-
     if quick:
-        pack = _build_evidence_pack(df, focus, per_topic=2, max_total=28)
-        local_context, local_sources = _evidence_context(pack, maxp=22)
+        pack = _build_evidence_pack(df, focus, per_topic=2, max_total=24)
+        local_context, local_sources = _evidence_context(pack, maxp=18)
     else:
-        pack = _build_evidence_pack(df, focus, per_topic=4, max_total=46)
-        local_context, local_sources = _evidence_context(pack, maxp=40)
+        pack = _build_evidence_pack(df, focus, per_topic=4, max_total=42)
+        local_context, local_sources = _evidence_context(pack, maxp=36)
 
-    yield {
-        "type": "stage",
-        "text": f"已构建代表证据包：{len(pack)}篇；正在补充2022—2026大尺寸KDP相关外部资料…",
-    }
+    yield {"type": "stage", "text": f"已构建代表证据包：{len(pack)}篇。正式报告将优先使用本地证据库，外部检索不可用不会中断生成。"}
 
-    web_query = (
-        "KDP KH2PO4 large size crystal growth scale effect hydrodynamics mass transfer "
-        "surface supersaturation growth interface growth striation phase jump white striation "
-        "hair inclusion liquid inclusion thermal stress cracking CFD FEA 2022 2023 2024 2025 2026 "
-        + str(focus or "")
-    )
+    # 为了导师汇报前的稳定性，外部补充改为“可选增强”，默认不作为正式报告的硬依赖。
+    web_context, web_sources = "", []
+    enable_web = bool(_secret("DIRECTION_ENABLE_WEB_RESEARCH", False))
+    if enable_web:
+        web_query = (
+            "KDP KH2PO4 large size crystal growth scale effect hydrodynamics mass transfer "
+            "surface supersaturation growth striation hair inclusion thermal stress cracking 2022 2023 2024 2025 2026 "
+            + str(focus or "")
+        )
+        try:
+            web_context, web_sources, _ = research_web(web_query)
+            yield {"type": "stage", "text": "外部资料补充已完成。"}
+        except Exception:
+            web_context, web_sources = "", []
+            yield {"type": "warning", "text": "外部资料补充暂不可用，已自动跳过；不会影响正式报告。"}
+
+    model = _secret("DEEPSEEK_FAST_MODEL", "deepseek-v4-flash") if quick else _secret("DEEPSEEK_MODEL", "deepseek-v4-pro")
+    thinking_enabled = False
+
+    timeout_value = _secret("DIRECTION_API_TIMEOUT", 240)
     try:
-        web_context, web_sources, web_status = research_web(web_query)
+        timeout_value = min(max(float(timeout_value), 120.0), 360.0)
     except Exception:
-        web_context, web_sources = "", []
-        web_status = {"crossref": "失败", "web": "失败"}
-        yield {
-            "type": "warning",
-            "text": "外部补充检索暂时失败，将继续基于本地KDP证据库生成报告。",
-        }
-
-    yield {
-        "type": "stage",
-        "text": (
-            "外部资料补充完成："
-            f"Crossref {web_status.get('crossref')}；Web {web_status.get('web')}。"
-        ),
-    }
-
-    if quick:
-        model = _secret("DEEPSEEK_FAST_MODEL", "deepseek-v4-flash")
-        thinking_enabled = False
-    else:
-        model = _secret("DEEPSEEK_MODEL", "deepseek-v4-pro")
-        # 正式长报告以“完整、稳定输出”为优先。证据扫描与选题结构已经由程序完成，
-        # 这里关闭深度思考，避免 reasoning_content 占用大量输出预算并提高长流中断概率。
-        thinking_enabled = False
-
-    # 比旧版90秒更宽裕；仍可在Secrets里覆盖。
-    timeout_value = _secret("DIRECTION_API_TIMEOUT", 180)
-    try:
-        timeout_value = min(max(float(timeout_value), 90.0), 300.0)
-    except Exception:
-        timeout_value = 180.0
+        timeout_value = 240.0
 
     client = OpenAI(
         api_key=_secret("DEEPSEEK_API_KEY"),
         base_url="https://api.deepseek.com",
         timeout=timeout_value,
-        max_retries=1,
+        max_retries=2,
     )
 
     yield {
@@ -756,223 +713,109 @@ def stream_direction_report(
     }
 
     common = _common_direction_context(
-        _stats_text(stats),
-        local_context,
-        web_context,
-        focus,
-        constraints,
-        project_context,
-        horizon,
-        theory_weight,
+        _stats_text(stats), local_context, web_context, focus, constraints,
+        project_context, horizon, theory_weight,
     )
 
     total_usage = {}
-    segment_finish_reasons = {}
+    finish_reasons = {}
 
     if quick:
-        quick_prompt = common + """
-
-【快速测试】
-请用较短篇幅生成一个完整的导师讨论版报告，包含：
-1. 3分钟摘要；
-2. 当前最值得做的3个科学问题；
-3. 1个主课题 + 2个备选；
-4. 实验—理论闭环；
-5. 两周/3个月/6个月/12个月计划；
-6. 10篇优先论文；
-7. 6个导师讨论问题。
+        prompt = common + """
+请生成一份不超过2500个中文字符的导师讨论精简报告：
+1. 文献调研总结；2. 3个核心科学问题；3. 1个主课题+2个备选；
+4. 实验—计算闭环；5. 理论计算软件与机器学习学习；6. 两周/3月/6月/12月计划。
 """
-        result = yield from _stream_deepseek_call(
-            client,
-            model,
-            [
-                {"role": "system", "content": SYSTEM},
-                {"role": "user", "content": quick_prompt},
-            ],
-            2800,
-            thinking_enabled,
+        result = _deepseek_call(
+            client, model,
+            [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
+            max_tokens=5200, thinking_enabled=False,
         )
         total_usage = _merge_usage(total_usage, result.get("usage"))
-        if result.get("error"):
-            yield {
-                "type": "failed",
-                "text": "快速报告流式连接中断。已生成内容已经保留。",
-                "segment": "Q",
-                "model": model,
-                "usage": total_usage,
-            }
+        if result.get("error") or not result.get("text", "").strip():
+            yield {"type": "failed", "segment": "Q", "model": model, "usage": total_usage,
+                   "text": "快速报告请求未成功返回完整正文，请稍后重试。"}
             return
-        segment_finish_reasons["Q"] = result.get("finish_reason")
-
+        yield {"type": "content", "text": result["text"].strip()}
+        finish_reasons["Q"] = result.get("finish_reason")
     else:
         skip_segments = set(skip_segments or set())
         try:
-            segment_max = int(_secret("DIRECTION_SEGMENT_MAX_TOKENS", 7600))
-            segment_max = min(max(segment_max, 5200), 12000)
+            segment_max = int(_secret("DIRECTION_SEGMENT_MAX_TOKENS", 6800))
+            segment_max = min(max(segment_max, 5200), 10000)
         except Exception:
-            segment_max = 7600
+            segment_max = 6800
 
         for seg_id, seg_title, seg_instruction in _formal_report_segments():
             if seg_id in skip_segments:
-                yield {
-                    "type": "stage",
-                    "text": f"已保留第{seg_id}段《{seg_title}》，跳过重复生成。",
-                }
+                yield {"type": "stage", "text": f"第{seg_id}段《{seg_title}》已完整保存，直接进入下一段。"}
                 continue
 
-            yield {
-                "type": "segment_start",
-                "segment": seg_id,
-                "title": seg_title,
-                "text": f"正在生成第{seg_id}段：{seg_title}…",
-            }
+            yield {"type": "segment_start", "segment": seg_id, "title": seg_title,
+                   "text": f"正在生成第{seg_id}段：{seg_title}…"}
 
             base_user = common + "\n\n" + seg_instruction
             segment_text = ""
-            continuation_count = 0
-            transport_retry_count = 0
-            segment_ok = False
+            attempts = 0
+            complete = False
 
-            while True:
-                if segment_text:
-                    messages = [
-                        {"role": "system", "content": SYSTEM},
-                        {"role": "user", "content": base_user},
-                        {"role": "assistant", "content": segment_text},
-                        {
-                            "role": "user",
-                            "content": (
-                                "上一轮在本段中途结束。请严格从最后一句之后继续，只补齐尚未完成的章节。"
-                                f"本段完整时必须包含章节：{', '.join(_segment_required_sections(seg_id))}。"
-                                "不要重写已经出现的章节标题、表格或段落；不要从本段开头重新开始。"
-                            ),
-                        },
-                    ]
+            while attempts < 4 and not complete:
+                attempts += 1
+                if not segment_text:
+                    user_prompt = base_user
                 else:
-                    messages = [
-                        {"role": "system", "content": SYSTEM},
-                        {"role": "user", "content": base_user},
-                    ]
+                    missing = _missing_segment_sections(seg_id, segment_text)
+                    user_prompt = common + f"""
+当前正在补齐第{seg_id}段《{seg_title}》。下面是已经成功生成的内容：
+--- 已有内容开始 ---
+{segment_text}
+--- 已有内容结束 ---
 
-                result = yield from _stream_deepseek_call(
-                    client,
-                    model,
-                    messages,
-                    segment_max,
-                    thinking_enabled,
+不要重复已有章节。只生成尚缺内容：{', '.join(missing)}。
+必须使用原计划中的章节号，并在全部补齐后单独输出：{_segment_done_marker(seg_id)}
+如果“完成标记”是唯一缺失项，只补一句必要结尾并输出完成标记，不要重写正文。
+"""
+
+                result = _deepseek_call(
+                    client, model,
+                    [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user_prompt}],
+                    max_tokens=segment_max,
+                    thinking_enabled=thinking_enabled,
                 )
-                new_text = result.get("text", "") or ""
-                segment_text += new_text
                 total_usage = _merge_usage(total_usage, result.get("usage"))
-                finish_reason = result.get("finish_reason")
-                error = result.get("error")
 
-                if error is not None:
-                    if segment_text.strip() and continuation_count < 4:
-                        continuation_count += 1
-                        yield {
-                            "type": "warning",
-                            "text": (
-                                f"第{seg_id}段流式连接在已生成部分内容后中断，"
-                                f"正在自动从中断处续写（{continuation_count}/4）…"
-                            ),
-                        }
-                        continue
+                if result.get("error"):
+                    yield {"type": "warning", "text": f"第{seg_id}段第{attempts}次请求连接失败，正在自动重试…"}
+                    continue
 
-                    if not segment_text.strip() and transport_retry_count < 3:
-                        transport_retry_count += 1
-                        yield {
-                            "type": "warning",
-                            "text": (
-                                f"第{seg_id}段连接未开始输出，正在自动重试"
-                                f"（{transport_retry_count}/3）…"
-                            ),
-                        }
-                        continue
+                new_text = (result.get("text") or "").strip()
+                if not new_text:
+                    yield {"type": "warning", "text": f"第{seg_id}段第{attempts}次返回为空，正在自动重试…"}
+                    continue
 
-                    yield {
-                        "type": "failed",
-                        "text": (
-                            f"第{seg_id}段《{seg_title}》连续重试后仍未完成。"
-                            "前面已经完整生成的段落已保留，可直接点击“继续生成未完成部分”。"
-                        ),
-                        "segment": seg_id,
-                        "model": model,
-                        "usage": total_usage,
-                    }
-                    return
+                segment_text = (segment_text + "\n\n" + new_text).strip() if segment_text else new_text
+                finish_reasons[seg_id] = result.get("finish_reason")
+                complete = _segment_is_complete(seg_id, segment_text)
 
-                # 不能再把 finish_reason=None 直接当“正常完成”。
-                # 流式连接若提前断开，SDK有时可能只留下部分正文；必须同时做章节完整性校验。
-                complete_now = _segment_is_complete(seg_id, segment_text)
-                missing_sections = _missing_segment_sections(seg_id, segment_text)
+                if not complete:
+                    missing = "、".join(_missing_segment_sections(seg_id, segment_text))
+                    yield {"type": "warning", "text": f"第{seg_id}段尚缺 {missing}，程序只补缺失内容，不会从头重写（{attempts}/4）。"}
 
-                if finish_reason == "stop" and complete_now:
-                    segment_finish_reasons[seg_id] = "stop"
-                    segment_ok = True
-                    break
+            if not complete:
+                yield {"type": "failed", "segment": seg_id, "model": model, "usage": total_usage,
+                       "text": f"第{seg_id}段连续自动补齐后仍未完整。已完成的前序整段已保存，可从本段继续；不会回到A段。"}
+                return
 
-                if finish_reason in ("length", None, "insufficient_system_resource") or not complete_now:
-                    if continuation_count < 4:
-                        continuation_count += 1
-                        reason_text = {
-                            "length": "达到单次输出上限",
-                            None: "流提前结束且未收到完整结束标志",
-                            "insufficient_system_resource": "服务端推理资源临时不足",
-                        }.get(finish_reason, "本段章节尚未完整")
-                        miss = "、".join(missing_sections) if missing_sections else "正文尾部"
-                        yield {
-                            "type": "warning",
-                            "text": (
-                                f"第{seg_id}段{reason_text}，当前仍缺少章节 {miss}；"
-                                f"正在自动续写（{continuation_count}/4），无需手动重新点击。"
-                            ),
-                        }
-                        continue
+            clean_segment = _strip_segment_marker(segment_text)
+            # 只有完整段才展示，用户不会再看到半截0节。
+            yield {"type": "content", "text": ("\n\n" if seg_id != "A" else "") + clean_segment}
+            yield {"type": "segment_done", "segment": seg_id, "title": seg_title,
+                   "text": f"第{seg_id}段《{seg_title}》完整完成。"}
 
-                    yield {
-                        "type": "failed",
-                        "text": (
-                            f"第{seg_id}段自动续写多次后仍不完整（缺少："
-                            f"{'、'.join(missing_sections) if missing_sections else '正文尾部'}）。"
-                            "前面完整段落已保留，可稍后从本段继续。"
-                        ),
-                        "segment": seg_id,
-                        "model": model,
-                        "usage": total_usage,
-                    }
-                    return
-
-                if finish_reason not in ("stop",):
-                    yield {
-                        "type": "failed",
-                        "text": (
-                            f"第{seg_id}段以状态 {finish_reason} 停止，且未通过完整性校验。"
-                            "已完成段落已保留。"
-                        ),
-                        "segment": seg_id,
-                        "model": model,
-                        "usage": total_usage,
-                    }
-                    return
-
-            if segment_ok:
-                yield {
-                    "type": "segment_done",
-                    "segment": seg_id,
-                    "title": seg_title,
-                    "text": f"第{seg_id}段《{seg_title}》完成。",
-                }
-
-    # 外部来源格式化不能再让整篇报告在最后一步判定失败。
     try:
         source_md = source_links_markdown(web_sources)
     except Exception:
         source_md = ""
-        yield {
-            "type": "warning",
-            "text": "报告正文已完成，但外部来源链接格式化失败；不会影响正文和Word导出。",
-        }
 
     if source_md:
         yield {"type": "content", "text": "\n\n" + source_md}
@@ -984,10 +827,9 @@ def stream_direction_report(
         "stats": stats,
         "model": model,
         "usage": total_usage,
-        "finish_reason": segment_finish_reasons,
+        "finish_reason": finish_reasons,
         "truncated": False,
     }
-
 
 def direction_review_page():
     df = load_data()
@@ -1226,8 +1068,8 @@ def direction_review_page():
             horizontal=True,
             index=1,
             help=(
-                "点击一次后会自动连续完成A—D全部内容；程序会在后台分段以提高稳定性，"
-                "但不需要你逐段点击。只有多次自动重试仍失败时才会出现恢复入口。"
+                "点击一次后后台自动完成A—D全部内容。正式报告改为非流式整段请求，"
+                "每一段完整后才展示和保存；若缺章节只补缺失章节，不会再次从A段开始。"
             ),
         )
 
@@ -1236,11 +1078,16 @@ def direction_review_page():
         + (
             " 快速测试用于低成本确认链路。"
             if run_mode == "快速测试"
-            else " 正式报告采用4段生成 + 自动续写 + 失败保留，适合直接形成导师讨论版材料。"
+            else " 正式报告采用非流式整段生成 + 缺失章节自动补齐 + 整段保存，优先保证一次点击得到完整导师版报告。"
         )
     )
 
     saved = st.session_state.get("_direction_report_resume") or {}
+    # 旧版流式报告的恢复点与新版非流式引擎不兼容，自动清理一次，避免“永远从A段重跑”。
+    if saved and saved.get("engine_version") != REPORT_ENGINE_VERSION:
+        st.session_state.pop("_direction_report_resume", None)
+        saved = {}
+        st.info("已自动清理旧版未完成报告记录。新版正式报告将从头完整生成一次，之后可按整段恢复。")
     saved_incomplete = bool(saved and not saved.get("complete"))
 
     do_resume = False
@@ -1293,6 +1140,7 @@ def direction_review_page():
         completed_segments = set()
         answer = ""
         st.session_state["_direction_report_resume"] = {
+            "engine_version": REPORT_ENGINE_VERSION,
             "complete": False,
             "focus": focus_run,
             "constraints": constraints_run,
@@ -1347,6 +1195,7 @@ def direction_review_page():
                 resume_state = st.session_state.get("_direction_report_resume") or {}
                 resume_state.update(
                     {
+                        "engine_version": REPORT_ENGINE_VERSION,
                         "complete": False,
                         "focus": focus_run,
                         "constraints": constraints_run,
@@ -1424,6 +1273,7 @@ def direction_review_page():
         resume_state = st.session_state.get("_direction_report_resume") or {}
         resume_state.update(
             {
+                "engine_version": REPORT_ENGINE_VERSION,
                 "complete": False,
                 "focus": focus_run,
                 "constraints": constraints_run,
@@ -1442,6 +1292,7 @@ def direction_review_page():
     else:
         # 快速模式或正式模式正常完成。
         st.session_state["_direction_report_resume"] = {
+            "engine_version": REPORT_ENGINE_VERSION,
             "complete": True,
             "focus": focus_run,
             "constraints": constraints_run,
